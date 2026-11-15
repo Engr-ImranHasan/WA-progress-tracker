@@ -1,0 +1,1291 @@
+import React, { useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Layers,
+  CircleDot,
+  ArrowRightLeft,
+  Sliders,
+  History,
+  Table2,
+  RotateCcw,
+  CheckCircle2,
+  Clock,
+  CircleDashed,
+  Search,
+} from 'lucide-react';
+import {
+  AppState,
+  PipeDia,
+  ShaftRecord,
+  ShaftType,
+  UiLang,
+  WorkStatus,
+} from '../types';
+import {
+  calcDurationDays,
+  calcElapsedDays,
+  formatDateDisplay,
+  getManholeStatus,
+  getPartStatus,
+  getShaftCompletedLayersCount,
+  getShaftStatus,
+  getTunnelStatus,
+  resizeShaftLayers,
+} from '../utils/calculations';
+import { DEFAULT_COLORS } from '../data/initialWaData';
+
+interface ShaftEditorPanelProps {
+  state: AppState;
+  selectedShaftId: string;
+  onSelectShaft: (id: string) => void;
+  onUpdateShaft: (id: string, patch: Partial<ShaftRecord>) => void;
+  onUpdateState: (updater: (prev: AppState) => AppState) => void;
+  focusSection?: 'shaft' | 'manhole' | 'tunnel';
+}
+
+const LABELS = {
+  bn: {
+    shaftEditor: 'Shaft এডিট',
+    bulkTable: 'সব ৩৭টি তালিকা',
+    settingsHistory: 'সেটিংস ও হিস্টোরি',
+    shaftSection: '১. Shaft ও লেয়ার (W1–W13)',
+    manholeSection: '২. Manhole (Casting + Precast Ring)',
+    tunnelSection: '৩. Micro-Tunnelling কানেকশন',
+    totalLayers: 'মোট লেয়ার (৬–১৩টি)',
+    completedLayers: 'সম্পন্ন লেয়ার',
+    bottomSlab: 'Bottom Slab সম্পন্ন',
+    sDate: 'শুরুর তারিখ (S. Date)',
+    eDate: 'শেষের তারিখ (E. Date)',
+    duration: 'সময়কাল (Duration)',
+    lowerCasting: 'নিচের অংশ: In-situ Casting',
+    upperPrecast: 'উপরের অংশ: Precast Ring',
+    remaining: 'Remaining',
+    ongoing: 'On-going',
+    complete: 'Complete',
+    totalLen: 'মোট দৈর্ঘ্য (m)',
+    compLen: 'সম্পন্ন দৈর্ঘ্য (m)',
+    compPct: 'সম্পন্ন (%)',
+    pipeDia: 'পাইপ সাইজ',
+    searchPlaceholder: 'Shaft খুঁজুন (যেমন WA-24)...',
+    pumpStationTitle: 'Pump Station (৫ লেয়ার)',
+  },
+  en: {
+    shaftEditor: 'Edit Shaft',
+    bulkTable: 'All 37 Table',
+    settingsHistory: 'Settings & History',
+    shaftSection: '1. Shaft & Layers (W1–W13)',
+    manholeSection: '2. Manhole (Casting + Precast Ring)',
+    tunnelSection: '3. Micro-Tunnelling Connection',
+    totalLayers: 'Total Layers (6–13)',
+    completedLayers: 'Completed Layers',
+    bottomSlab: 'Bottom Slab Completed',
+    sDate: 'Start Date (S. Date)',
+    eDate: 'End Date (E. Date)',
+    duration: 'Duration',
+    lowerCasting: 'Lower Part: In-situ Casting',
+    upperPrecast: 'Upper Part: Precast Ring',
+    remaining: 'Remaining',
+    ongoing: 'On-going',
+    complete: 'Complete',
+    totalLen: 'Total Length (m)',
+    compLen: 'Completed (m)',
+    compPct: 'Completed (%)',
+    pipeDia: 'Pipe Dia',
+    searchPlaceholder: 'Search shaft (e.g. WA-24)...',
+    pumpStationTitle: 'Pump Station (5 Layers)',
+  },
+};
+
+function StatusChip({ status }: { status: WorkStatus }) {
+  if (status === 'complete') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+        <CheckCircle2 className="h-3 w-3" /> Complete
+      </span>
+    );
+  }
+  if (status === 'ongoing') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+        <Clock className="h-3 w-3" /> On-going
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800">
+      <CircleDashed className="h-3 w-3" /> Remaining
+    </span>
+  );
+}
+
+export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
+  state,
+  selectedShaftId,
+  onSelectShaft,
+  onUpdateShaft,
+  onUpdateState,
+}) => {
+  const [activeTab, setActiveTab] = useState<'single' | 'table' | 'settings'>('single');
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | WorkStatus>('all');
+  const [showBaselineOverride, setShowBaselineOverride] = useState(false);
+
+  const lang: UiLang = state.uiLang;
+  const L = LABELS[lang];
+
+  const idx = state.shafts.findIndex((s) => s.id === selectedShaftId);
+  const shaft = state.shafts[idx >= 0 ? idx : 0];
+  const prevShaft = idx > 0 ? state.shafts[idx - 1] : null;
+  const nextShaft = idx < state.shafts.length - 1 ? state.shafts[idx + 1] : null;
+
+  const activeBaseline =
+    state.viewMode === 'monthly' ? state.monthlyBaseline : state.weeklyBaseline;
+  const bSnap = activeBaseline.shafts[shaft.id];
+
+  const shStatus = getShaftStatus(shaft);
+  const mhStatus = getManholeStatus(shaft);
+  const mtStatus = getTunnelStatus(shaft);
+  const shDoneCount = getShaftCompletedLayersCount(shaft);
+  const shDur = calcDurationDays(shaft.shaftSDate, shaft.shaftEDate);
+  const shElapsed = calcElapsedDays(shaft.shaftSDate, state.settings.reportDate);
+  const mhDur = calcDurationDays(shaft.manholeSDate, shaft.manholeEDate);
+  const mtDur = calcDurationDays(shaft.tunnelSDate, shaft.tunnelEDate);
+
+  const setCompletedLayersTopDown = (count: number) => {
+    const clamped = Math.max(0, Math.min(shaft.totalLayers, count));
+    const newFlags = Array.from(
+      { length: shaft.totalLayers },
+      (_, i) => i < clamped
+    );
+    onUpdateShaft(shaft.id, {
+      layerFlags: newFlags,
+      bottomSlabDone: clamped === shaft.totalLayers ? shaft.bottomSlabDone : false,
+    });
+  };
+
+  const toggleSingleLayer = (li: number) => {
+    const copy = [...shaft.layerFlags];
+    copy[li] = !copy[li];
+    onUpdateShaft(shaft.id, { layerFlags: copy });
+  };
+
+  const handleTotalLayersChange = (newTotal: number) => {
+    const clamped = Math.max(6, Math.min(13, newTotal));
+    const newFlags = resizeShaftLayers(shaft.layerFlags, clamped);
+    onUpdateShaft(shaft.id, {
+      totalLayers: clamped,
+      layerFlags: newFlags,
+    });
+  };
+
+  const updateBaselineForSelected = (
+    patch: Partial<{
+      layersCount: number;
+      bottomSlabDone: boolean;
+      castingPct: number;
+      precastPct: number;
+      tunnelPct: number;
+    }>
+  ) => {
+    const targetKey = state.viewMode === 'monthly' ? 'monthlyBaseline' : 'weeklyBaseline';
+    onUpdateState((prev) => {
+      const base = prev[targetKey];
+      const existing = base.shafts[shaft.id] || {
+        layerFlags: Array(shaft.totalLayers).fill(false),
+        bottomSlabDone: false,
+        castingPct: 0,
+        precastPct: 0,
+        tunnelPct: 0,
+      };
+      const nextLayers =
+        patch.layersCount !== undefined
+          ? Array.from(
+              { length: shaft.totalLayers },
+              (_, i) => i < Math.max(0, Math.min(shaft.totalLayers, patch.layersCount!))
+            )
+          : existing.layerFlags;
+
+      return {
+        ...prev,
+        [targetKey]: {
+          ...base,
+          shafts: {
+            ...base.shafts,
+            [shaft.id]: {
+              ...existing,
+              layerFlags: nextLayers,
+              bottomSlabDone: patch.bottomSlabDone ?? existing.bottomSlabDone,
+              castingPct: patch.castingPct ?? existing.castingPct,
+              precastPct: patch.precastPct ?? existing.precastPct,
+              tunnelPct: patch.tunnelPct ?? existing.tunnelPct,
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const filteredShafts = state.shafts.filter((s) => {
+    const matchesSearch =
+      !search.trim() ||
+      s.id.toLowerCase().includes(search.trim().toLowerCase()) ||
+      s.pipeDia.toLowerCase().includes(search.trim().toLowerCase());
+    if (!matchesSearch) return false;
+    if (filterStatus === 'all') return true;
+    return (
+      getShaftStatus(s) === filterStatus ||
+      getManholeStatus(s) === filterStatus ||
+      getTunnelStatus(s) === filterStatus
+    );
+  });
+
+  return (
+    <aside className="no-print flex h-full flex-col border-l border-slate-200 bg-white">
+      {/* Top 3 Editor Tabs */}
+      <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-xs font-semibold">
+        <button
+          onClick={() => setActiveTab('single')}
+          className={`flex items-center justify-center gap-1.5 py-2.5 border-b-2 transition ${
+            activeTab === 'single'
+              ? 'border-blue-600 bg-white text-blue-700'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Layers className="h-3.5 w-3.5" />
+          {L.shaftEditor}
+        </button>
+        <button
+          onClick={() => setActiveTab('table')}
+          className={`flex items-center justify-center gap-1.5 py-2.5 border-b-2 transition ${
+            activeTab === 'table'
+              ? 'border-blue-600 bg-white text-blue-700'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Table2 className="h-3.5 w-3.5" />
+          {L.bulkTable}
+        </button>
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`flex items-center justify-center gap-1.5 py-2.5 border-b-2 transition ${
+            activeTab === 'settings'
+              ? 'border-blue-600 bg-white text-blue-700'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Sliders className="h-3.5 w-3.5" />
+          {L.settingsHistory}
+        </button>
+      </div>
+
+      {/* ==================== TAB 1: SINGLE SHAFT EDITOR ==================== */}
+      {activeTab === 'single' && (
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {/* Shaft Navigator Bar */}
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 p-2">
+            <button
+              disabled={!prevShaft}
+              onClick={() => prevShaft && onSelectShaft(prevShaft.id)}
+              className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              title="Previous Shaft"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            <div className="flex flex-1 flex-col items-center">
+              <select
+                value={shaft.id}
+                onChange={(e) => onSelectShaft(e.target.value)}
+                className="w-full rounded-md border border-blue-300 bg-white px-2.5 py-1 text-center text-sm font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {state.shafts.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    Shaft {s.id} → {s.nextId} ({s.pipeDia})
+                  </option>
+                ))}
+              </select>
+              <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[11px]">
+                <span className="text-slate-500 font-medium">Shaft:</span>
+                <StatusChip status={shStatus} />
+                <span className="text-slate-500 font-medium ml-1">MH:</span>
+                <StatusChip status={mhStatus} />
+                <span className="text-slate-500 font-medium ml-1">MT:</span>
+                <StatusChip status={mtStatus} />
+              </div>
+            </div>
+
+            <button
+              disabled={!nextShaft}
+              onClick={() => nextShaft && onSelectShaft(nextShaft.id)}
+              className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              title="Next Shaft"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* SECTION 1: SHAFT & LAYERS (6-13) */}
+          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wide">
+                <Layers className="h-3.5 w-3.5 text-emerald-600" />
+                {L.shaftSection}
+              </h3>
+              <StatusChip status={shStatus} />
+            </div>
+
+            {/* Total Layers (6 to 13) + Completed Stepper */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-md bg-slate-50 p-2 border border-slate-200">
+                <div className="text-[11px] font-medium text-slate-600">{L.totalLayers}</div>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleTotalLayersChange(shaft.totalLayers - 1)}
+                    disabled={shaft.totalLayers <= 6}
+                    className="h-7 w-7 rounded border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                  >
+                    -
+                  </button>
+                  <span className="flex-1 text-center text-sm font-bold text-slate-900">
+                    {shaft.totalLayers}
+                  </span>
+                  <button
+                    onClick={() => handleTotalLayersChange(shaft.totalLayers + 1)}
+                    disabled={shaft.totalLayers >= 13}
+                    className="h-7 w-7 rounded border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-md bg-emerald-50/70 p-2 border border-emerald-200">
+                <div className="text-[11px] font-medium text-emerald-800">{L.completedLayers}</div>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <button
+                    onClick={() => setCompletedLayersTopDown(shDoneCount - 1)}
+                    disabled={shDoneCount <= 0}
+                    className="h-7 w-7 rounded border border-emerald-300 bg-white font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+                  >
+                    -
+                  </button>
+                  <span className="flex-1 text-center text-sm font-bold text-emerald-900">
+                    {shDoneCount} / {shaft.totalLayers}
+                  </span>
+                  <button
+                    onClick={() => setCompletedLayersTopDown(shDoneCount + 1)}
+                    disabled={shDoneCount >= shaft.totalLayers}
+                    className="h-7 w-7 rounded border border-emerald-300 bg-white font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Individual Clickable Layer Pills W1..WN */}
+            <div>
+              <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500">
+                <span>Click layers (W1–W{shaft.totalLayers}):</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      onUpdateShaft(shaft.id, {
+                        layerFlags: Array(shaft.totalLayers).fill(true),
+                        bottomSlabDone: true,
+                      });
+                    }}
+                    className="text-emerald-700 font-semibold hover:underline"
+                  >
+                    All Complete
+                  </button>
+                  <button
+                    onClick={() => {
+                      onUpdateShaft(shaft.id, {
+                        layerFlags: Array(shaft.totalLayers).fill(false),
+                        bottomSlabDone: false,
+                      });
+                    }}
+                    className="text-rose-600 font-semibold hover:underline"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {Array.from({ length: shaft.totalLayers }).map((_, li) => {
+                  const done = Boolean(shaft.layerFlags[li]);
+                  const prevDone = Boolean(bSnap?.layerFlags?.[li]);
+                  const isNewInPeriod = state.viewMode !== 'overall' && done && !prevDone;
+                  return (
+                    <button
+                      key={li}
+                      onClick={() => toggleSingleLayer(li)}
+                      className={`rounded px-2 py-1 text-[11px] font-bold border transition ${
+                        isNewInPeriod
+                          ? 'bg-amber-400 border-amber-600 text-slate-950'
+                          : done
+                          ? 'bg-emerald-600 border-emerald-700 text-white'
+                          : 'bg-white border-rose-300 text-rose-600 hover:bg-rose-50'
+                      }`}
+                      title={
+                        isNewInPeriod
+                          ? `W${li + 1}: New this period!`
+                          : done
+                          ? `W${li + 1}: Completed`
+                          : `W${li + 1}: Remaining`
+                      }
+                    >
+                      W{li + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Bottom Slab + Sheet Pile Checkboxes */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+              <label className="flex items-center gap-1.5 font-medium text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={shaft.bottomSlabDone}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { bottomSlabDone: e.target.checked })
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+                />
+                {L.bottomSlab}
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={shaft.sheetPileStyle}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { sheetPileStyle: e.target.checked })
+                  }
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                />
+                Strutted Wall
+              </label>
+            </div>
+
+            {/* Shaft Dates & Auto Duration */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.sDate}
+                </label>
+                <input
+                  type="date"
+                  value={shaft.shaftSDate}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { shaftSDate: e.target.value })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.eDate}
+                </label>
+                <input
+                  type="date"
+                  value={shaft.shaftEDate}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { shaftEDate: e.target.value })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded bg-slate-50 px-2.5 py-1.5 text-xs">
+              <span className="text-slate-600 font-medium">{L.duration}:</span>
+              <span className="font-bold text-slate-900">
+                {shDur !== null
+                  ? `${shDur} Days`
+                  : shStatus === 'ongoing'
+                  ? `On-going (${shElapsed ? shElapsed + ' Days elapsed' : 'Active'})`
+                  : 'Not Started'}
+              </span>
+            </div>
+
+            {/* Shaft Physical Specs (Compact) */}
+            <details className="text-xs">
+              <summary className="cursor-pointer font-semibold text-slate-500 hover:text-slate-800">
+                Shaft Dimensions ({shaft.shaftSize} | {shaft.shaftType} | H:{shaft.netHeightMm}mm)
+              </summary>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] text-slate-500">Shaft Size (mm)</label>
+                  <input
+                    type="text"
+                    value={shaft.shaftSize}
+                    onChange={(e) => onUpdateShaft(shaft.id, { shaftSize: e.target.value })}
+                    className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-500">Type of Shaft</label>
+                  <select
+                    value={shaft.shaftType}
+                    onChange={(e) =>
+                      onUpdateShaft(shaft.id, { shaftType: e.target.value as ShaftType })
+                    }
+                    className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                  >
+                    <option value="Driving">Driving</option>
+                    <option value="Receiving">Receiving</option>
+                    <option value="Receiving/Driving">Receiving/Driving</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-500">Net Height (mm)</label>
+                  <input
+                    type="number"
+                    value={shaft.netHeightMm}
+                    onChange={(e) =>
+                      onUpdateShaft(shaft.id, { netHeightMm: Number(e.target.value) || 0 })
+                    }
+                    className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-500">Bottom Slab (mm)</label>
+                  <input
+                    type="number"
+                    value={shaft.bottomSlabMm}
+                    onChange={(e) =>
+                      onUpdateShaft(shaft.id, { bottomSlabMm: Number(e.target.value) || 0 })
+                    }
+                    className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                  />
+                </div>
+              </div>
+            </details>
+          </div>
+
+          {/* SECTION 2: MANHOLE (2 PARTS: CASTING + PRECAST RING) */}
+          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wide">
+                <CircleDot className="h-3.5 w-3.5 text-blue-600" />
+                {L.manholeSection}
+              </h3>
+              <StatusChip status={mhStatus} />
+            </div>
+
+            {/* Part 1: Lower In-situ Casting */}
+            <div className="rounded-md border border-blue-100 bg-blue-50/40 p-2 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-blue-900">{L.lowerCasting}</span>
+                <span className="font-bold text-blue-700">{shaft.castingPct}%</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={10}
+                  value={shaft.castingPct}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { castingPct: Number(e.target.value) })
+                  }
+                  className="flex-1 accent-blue-600"
+                />
+                <div className="flex gap-1">
+                  {[
+                    { lbl: '0%', val: 0 },
+                    { lbl: '50%', val: 50 },
+                    { lbl: '100%', val: 100 },
+                  ].map((b) => (
+                    <button
+                      key={b.val}
+                      onClick={() => onUpdateShaft(shaft.id, { castingPct: b.val })}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-bold border ${
+                        shaft.castingPct === b.val
+                          ? 'bg-blue-600 text-white border-blue-700'
+                          : 'bg-white text-slate-600 border-slate-300'
+                      }`}
+                    >
+                      {b.lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="text-[10px] text-slate-500">
+                Status: <strong className="uppercase">{getPartStatus(shaft.castingPct)}</strong>
+                {state.viewMode !== 'overall' && bSnap && (
+                  <span className="ml-2 text-amber-700">
+                    (Prev: {bSnap.castingPct}% → +{Math.max(0, shaft.castingPct - bSnap.castingPct)}%)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Part 2: Upper Precast Ring */}
+            <div className="rounded-md border border-sky-100 bg-sky-50/40 p-2 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-sky-900">{L.upperPrecast}</span>
+                <span className="font-bold text-sky-700">{shaft.precastPct}%</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={10}
+                  value={shaft.precastPct}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { precastPct: Number(e.target.value) })
+                  }
+                  className="flex-1 accent-sky-600"
+                />
+                <div className="flex gap-1">
+                  {[
+                    { lbl: '0%', val: 0 },
+                    { lbl: '50%', val: 50 },
+                    { lbl: '100%', val: 100 },
+                  ].map((b) => (
+                    <button
+                      key={b.val}
+                      onClick={() => onUpdateShaft(shaft.id, { precastPct: b.val })}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-bold border ${
+                        shaft.precastPct === b.val
+                          ? 'bg-sky-600 text-white border-sky-700'
+                          : 'bg-white text-slate-600 border-slate-300'
+                      }`}
+                    >
+                      {b.lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="text-[10px] text-slate-500">
+                Status: <strong className="uppercase">{getPartStatus(shaft.precastPct)}</strong>
+                {state.viewMode !== 'overall' && bSnap && (
+                  <span className="ml-2 text-amber-700">
+                    (Prev: {bSnap.precastPct}% → +{Math.max(0, shaft.precastPct - bSnap.precastPct)}%)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Manhole Dates */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.sDate}
+                </label>
+                <input
+                  type="date"
+                  value={shaft.manholeSDate}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { manholeSDate: e.target.value })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.eDate}
+                </label>
+                <input
+                  type="date"
+                  value={shaft.manholeEDate}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { manholeEDate: e.target.value })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded bg-slate-50 px-2.5 py-1.5 text-xs">
+              <span className="text-slate-600 font-medium">{L.duration}:</span>
+              <span className="font-bold text-slate-900">
+                {mhDur !== null
+                  ? `${mhDur} Days`
+                  : mhStatus === 'ongoing'
+                  ? 'On-going'
+                  : 'Not Started'}
+              </span>
+            </div>
+          </div>
+
+          {/* SECTION 3: MICRO-TUNNELLING CONNECTION */}
+          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wide">
+                <ArrowRightLeft className="h-3.5 w-3.5 text-fuchsia-600" />
+                {shaft.id} → {shaft.nextId}
+              </h3>
+              <StatusChip status={mtStatus} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.pipeDia}
+                </label>
+                <select
+                  value={shaft.pipeDia}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { pipeDia: e.target.value as PipeDia })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs font-semibold"
+                >
+                  <option value="DN900">DN900</option>
+                  <option value="DN1100">DN1100</option>
+                  <option value="DN1600">DN1600</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.totalLen}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={shaft.tunnelLengthM}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, {
+                      tunnelLengthM: Math.max(0.1, Number(e.target.value) || 0),
+                    })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs font-semibold"
+                />
+              </div>
+            </div>
+
+            {/* Completed % & Completed Meters synced */}
+            <div className="rounded-md border border-fuchsia-100 bg-fuchsia-50/40 p-2 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-semibold text-fuchsia-900">
+                    {L.compPct}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={shaft.tunnelPct}
+                    onChange={(e) =>
+                      onUpdateShaft(shaft.id, {
+                        tunnelPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                      })
+                    }
+                    className="mt-0.5 w-full rounded border border-fuchsia-300 bg-white px-2 py-1 text-xs font-bold text-fuchsia-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-fuchsia-900">
+                    {L.compLen}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    max={shaft.tunnelLengthM}
+                    value={Number(
+                      ((shaft.tunnelLengthM * shaft.tunnelPct) / 100).toFixed(1)
+                    )}
+                    onChange={(e) => {
+                      const m = Math.max(
+                        0,
+                        Math.min(shaft.tunnelLengthM, Number(e.target.value) || 0)
+                      );
+                      const pct =
+                        shaft.tunnelLengthM > 0
+                          ? Math.round((m / shaft.tunnelLengthM) * 100)
+                          : 0;
+                      onUpdateShaft(shaft.id, { tunnelPct: pct });
+                    }}
+                    className="mt-0.5 w-full rounded border border-fuchsia-300 bg-white px-2 py-1 text-xs font-bold text-fuchsia-900"
+                  />
+                </div>
+              </div>
+
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={shaft.tunnelPct}
+                onChange={(e) =>
+                  onUpdateShaft(shaft.id, { tunnelPct: Number(e.target.value) })
+                }
+                className="w-full accent-fuchsia-600"
+              />
+              <div className="flex flex-wrap gap-1">
+                {[0, 20, 40, 50, 60, 80, 100].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => onUpdateShaft(shaft.id, { tunnelPct: v })}
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold border ${
+                      shaft.tunnelPct === v
+                        ? 'bg-fuchsia-600 text-white border-fuchsia-700'
+                        : 'bg-white text-slate-600 border-slate-300'
+                    }`}
+                  >
+                    {v}%
+                  </button>
+                ))}
+              </div>
+              {state.viewMode !== 'overall' && bSnap && (
+                <div className="text-[11px] font-medium text-amber-800">
+                  Prev Baseline: {bSnap.tunnelPct}% → Added:{' '}
+                  <strong>+{Math.max(0, shaft.tunnelPct - bSnap.tunnelPct)}%</strong> (
+                  +
+                  {(
+                    (shaft.tunnelLengthM *
+                      Math.max(0, shaft.tunnelPct - bSnap.tunnelPct)) /
+                    100
+                  ).toFixed(1)}
+                  m)
+                </div>
+              )}
+            </div>
+
+            {/* Tunnel Dates */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.sDate}
+                </label>
+                <input
+                  type="date"
+                  value={shaft.tunnelSDate}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { tunnelSDate: e.target.value })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.eDate}
+                </label>
+                <input
+                  type="date"
+                  value={shaft.tunnelEDate}
+                  onChange={(e) =>
+                    onUpdateShaft(shaft.id, { tunnelEDate: e.target.value })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded bg-slate-50 px-2.5 py-1.5 text-xs">
+              <span className="text-slate-600 font-medium">{L.duration}:</span>
+              <span className="font-bold text-slate-900">
+                {mtDur !== null
+                  ? `${mtDur} Days`
+                  : mtStatus === 'ongoing'
+                  ? 'On-going'
+                  : 'Not Started'}
+              </span>
+            </div>
+          </div>
+
+          {/* Optional Baseline Manual Adjustment (for Weekly/Monthly mode) */}
+          {state.viewMode !== 'overall' && bSnap && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-2.5 text-xs">
+              <button
+                onClick={() => setShowBaselineOverride(!showBaselineOverride)}
+                className="flex w-full items-center justify-between font-bold text-amber-900"
+              >
+                <span>
+                  {state.viewMode === 'weekly'
+                    ? 'Previous Week Baseline Override'
+                    : 'Last Monthly Meeting Baseline Override'}
+                </span>
+                <span>{showBaselineOverride ? '▲' : '▼'}</span>
+              </button>
+              {showBaselineOverride && (
+                <div className="mt-2 grid grid-cols-2 gap-2 pt-2 border-t border-amber-200">
+                  <div>
+                    <label className="block text-[10px] text-amber-800">Prev Layers</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={shaft.totalLayers}
+                      value={(bSnap.layerFlags || []).filter(Boolean).length}
+                      onChange={(e) =>
+                        updateBaselineForSelected({ layersCount: Number(e.target.value) })
+                      }
+                      className="mt-0.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-amber-800">Prev Tunnel (%)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={bSnap.tunnelPct}
+                      onChange={(e) =>
+                        updateBaselineForSelected({
+                          tunnelPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                        })
+                      }
+                      className="mt-0.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-amber-800">Prev Casting (%)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={bSnap.castingPct}
+                      onChange={(e) =>
+                        updateBaselineForSelected({
+                          castingPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                        })
+                      }
+                      className="mt-0.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-amber-800">Prev Precast (%)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={bSnap.precastPct}
+                      onChange={(e) =>
+                        updateBaselineForSelected({
+                          precastPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                        })
+                      }
+                      className="mt-0.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ==================== TAB 2: BULK QUICK TABLE (ALL 37) ==================== */}
+      {activeTab === 'table' && (
+        <div className="flex flex-1 flex-col overflow-hidden p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={L.searchPlaceholder}
+                className="w-full rounded-md border border-slate-300 pl-8 pr-2 py-1.5 text-xs"
+              />
+            </div>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as 'all' | WorkStatus)}
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium"
+            >
+              <option value="all">All (37)</option>
+              <option value="ongoing">On-going</option>
+              <option value="complete">Complete</option>
+              <option value="remaining">Remaining</option>
+            </select>
+          </div>
+
+          <div className="flex-1 overflow-y-auto rounded-lg border border-slate-200">
+            <table className="w-full text-left text-[11px]">
+              <thead className="sticky top-0 bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                  <th className="px-2 py-1.5">Shaft</th>
+                  <th className="px-1.5 py-1.5">Layers</th>
+                  <th className="px-1.5 py-1.5">Cast%</th>
+                  <th className="px-1.5 py-1.5">Ring%</th>
+                  <th className="px-1.5 py-1.5">Tun%</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredShafts.map((s) => {
+                  const doneL = getShaftCompletedLayersCount(s);
+                  const isSel = s.id === selectedShaftId;
+                  return (
+                    <tr
+                      key={s.id}
+                      onClick={() => onSelectShaft(s.id)}
+                      className={`cursor-pointer hover:bg-blue-50 ${
+                        isSel ? 'bg-blue-50/80' : ''
+                      }`}
+                    >
+                      <td className="px-2 py-1.5 font-bold text-slate-900">
+                        <div>{s.id}</div>
+                        <div className="text-[9px] font-normal text-slate-500">
+                          {s.pipeDia} · {s.tunnelLengthM}m
+                        </div>
+                      </td>
+                      <td className="px-1.5 py-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          max={s.totalLayers}
+                          value={doneL}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const c = Math.max(0, Math.min(s.totalLayers, Number(e.target.value) || 0));
+                            onUpdateShaft(s.id, {
+                              layerFlags: Array.from({ length: s.totalLayers }, (_, i) => i < c),
+                            });
+                          }}
+                          className="w-11 rounded border border-slate-300 px-1 py-0.5 text-center font-semibold"
+                        />
+                        <span className="ml-0.5 text-[10px] text-slate-400">/{s.totalLayers}</span>
+                      </td>
+                      <td className="px-1.5 py-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={10}
+                          value={s.castingPct}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            onUpdateShaft(s.id, {
+                              castingPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                            })
+                          }
+                          className="w-11 rounded border border-slate-300 px-1 py-0.5 text-center font-semibold"
+                        />
+                      </td>
+                      <td className="px-1.5 py-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={10}
+                          value={s.precastPct}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            onUpdateShaft(s.id, {
+                              precastPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                            })
+                          }
+                          className="w-11 rounded border border-slate-300 px-1 py-0.5 text-center font-semibold"
+                        />
+                      </td>
+                      <td className="px-1.5 py-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={s.tunnelPct}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            onUpdateShaft(s.id, {
+                              tunnelPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                            })
+                          }
+                          className="w-11 rounded border border-slate-300 px-1 py-0.5 text-center font-semibold"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== TAB 3: SETTINGS, COLORS & HISTORY ==================== */}
+      {activeTab === 'settings' && (
+        <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
+          {/* A1 Sheet & Title Block */}
+          <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+            <h3 className="font-bold text-slate-800 uppercase">A1 Sheet Setup & Title Block</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] text-slate-500">Report Date</label>
+                <input
+                  type="date"
+                  value={state.settings.reportDate}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, reportDate: e.target.value },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-500">A1 Grid Layout</label>
+                <select
+                  value={state.settings.layoutMode}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: {
+                        ...p.settings,
+                        layoutMode: e.target.value as '10col' | '12col',
+                      },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
+                >
+                  <option value="10col">A1 Balanced (10 Cols)</option>
+                  <option value="12col">Original PDF (12 Cols)</option>
+                </select>
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 pt-1 font-medium text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={state.settings.showPumpStation}
+                onChange={(e) =>
+                  onUpdateState((p) => ({
+                    ...p,
+                    settings: { ...p.settings, showPumpStation: e.target.checked },
+                  }))
+                }
+                className="h-4 w-4 rounded"
+              />
+              Show Pump Station on A1 Sheet
+            </label>
+
+            <div>
+              <label className="block text-[10px] text-slate-500">Section Title</label>
+              <input
+                type="text"
+                value={state.settings.sectionTitle}
+                onChange={(e) =>
+                  onUpdateState((p) => ({
+                    ...p,
+                    settings: { ...p.settings, sectionTitle: e.target.value },
+                  }))
+                }
+                className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] text-slate-500">Prepared By</label>
+                <input
+                  type="text"
+                  value={state.settings.preparedBy}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, preparedBy: e.target.value },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-500">Drawing No / Rev</label>
+                <input
+                  type="text"
+                  value={`${state.settings.drawingNo}`}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, drawingNo: e.target.value },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Color Scheme Customization */}
+          <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-800 uppercase">
+                Color Settings (Weekly / Monthly)
+              </h3>
+              <button
+                onClick={() =>
+                  onUpdateState((p) => ({ ...p, colors: { ...DEFAULT_COLORS } }))
+                }
+                className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:underline"
+              >
+                <RotateCcw className="h-3 w-3" /> Reset
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ['thisWeekHighlight', 'This Week Added'],
+                ['prevWeekShaft', 'Prev Week (Shaft)'],
+                ['prevWeekManhole', 'Prev Week (Manhole)'],
+                ['prevWeekTunnel', 'Prev Week (Tunnel)'],
+                ['thisMonthHighlight', 'This Month Added'],
+                ['prevMonthShaft', 'Prev Meeting (Shaft)'],
+                ['overallCasting', 'Overall Casting'],
+                ['overallPrecast', 'Overall Precast'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex items-center justify-between rounded border border-slate-200 px-2 py-1">
+                  <span className="text-[11px] text-slate-700">{label}</span>
+                  <input
+                    type="color"
+                    value={state.colors[key as keyof typeof state.colors]}
+                    onChange={(e) =>
+                      onUpdateState((p) => ({
+                        ...p,
+                        colors: { ...p.colors, [key]: e.target.value },
+                      }))
+                    }
+                    className="h-5 w-7 cursor-pointer rounded border-0 bg-transparent"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Period History Log */}
+          <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+            <h3 className="flex items-center gap-1.5 font-bold text-slate-800 uppercase">
+              <History className="h-3.5 w-3.5 text-blue-600" />
+              Saved Weekly & Monthly History ({state.history.length})
+            </h3>
+            {state.history.length === 0 ? (
+              <p className="text-[11px] text-slate-500">
+                No locked periods yet. Use &ldquo;Close Week&rdquo; or &ldquo;Close Month&rdquo; from the top bar after updating progress!
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                {state.history.map((h) => (
+                  <div
+                    key={h.id}
+                    className="rounded border border-slate-200 bg-slate-50 p-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900">{h.label}</span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                          h.type === 'weekly'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-cyan-100 text-cyan-800'
+                        }`}
+                      >
+                        {h.type}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[10px] text-slate-600">
+                      Date: {formatDateDisplay(h.date)} · Shafts: {h.summary.completedShafts}/37 ·
+                      MH: {h.summary.completedManholes}/37 · Tunnel:{' '}
+                      {h.summary.tunnelCompletedKm.toFixed(3)} km
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+};
