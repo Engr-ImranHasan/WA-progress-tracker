@@ -1,30 +1,38 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ArrowRight,
   Check,
   Download,
+  Eye,
+  FileCode2,
   FileSpreadsheet,
   FileText,
-  Printer,
-  Upload,
-  ZoomIn,
-  ZoomOut,
+  FolderOpen,
+  Image as ImageIcon,
+  Languages,
   Maximize2,
   Minimize2,
-  Lock,
-  RotateCcw,
-  Save,
-  Image as ImageIcon,
-  FileCode2,
-  Languages,
   PanelRightClose,
   PanelRightOpen,
-  CalendarCheck,
+  Pencil,
+  Plus,
+  Printer,
+  RotateCcw,
+  Save,
+  Trash2,
+  Upload,
+  X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
-import { AppState, HistoryArchiveEntry, ShaftRecord, ViewMode } from './types';
+import { AppState, SavedProgressFile, ShaftRecord, ViewMode } from './types';
 import { createInitialAppState } from './data/initialWaData';
 import {
   computeSummary,
-  createSnapshotFromState,
+  formatDateDisplay,
+  getPumpLowerStatus,
+  LIVE_WORKSPACE_ID,
+  resolveDisplayContext,
   sanitizeLoadedState,
 } from './utils/calculations';
 import {
@@ -33,6 +41,8 @@ import {
   exportExcelWorkbook,
   exportHighResPng,
   exportJsonBackup,
+  exportSavedFileExcel,
+  exportSavedFileJson,
   exportSvgFile,
   importExcelShafts,
 } from './utils/exporters';
@@ -60,12 +70,22 @@ export function App() {
   const [zoom, setZoom] = useState<number>(1);
   const [showInspector, setShowInspector] = useState<boolean>(true);
   const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
-  const [lockModalType, setLockModalType] = useState<'weekly' | 'monthly' | null>(null);
-  const [nextPeriodLabel, setNextPeriodLabel] = useState<string>('');
+
+  // Save Overall File Modal
+  const [saveModalOpen, setSaveModalOpen] = useState<boolean>(false);
+  const [saveFileName, setSaveFileName] = useState<string>('');
+  const [saveFileDate, setSaveFileDate] = useState<string>('');
+  const [saveFileNote, setSaveFileNote] = useState<string>('');
+
+  // Saved Files Manager Modal & In-Modal Viewer
+  const [filesModalOpen, setFilesModalOpen] = useState<boolean>(false);
+  const [previewFile, setPreviewFile] = useState<SavedProgressFile | null>(null);
+
   const [toastMsg, setToastMsg] = useState<string>('');
   const [exportBusy, setExportBusy] = useState<string>('');
 
   const svgRef = useRef<SVGSVGElement>(null);
+  const previewSvgRef = useRef<SVGSVGElement>(null);
   const excelInputRef = useRef<HTMLInputElement | null>(null);
   const jsonInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -83,7 +103,7 @@ export function App() {
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 3200);
+    setTimeout(() => setToastMsg(''), 3400);
   };
 
   const handleUpdateShaft = (id: string, patch: Partial<ShaftRecord>) => {
@@ -94,80 +114,168 @@ export function App() {
     }));
   };
 
-  const activeBaseline =
-    state.viewMode === 'monthly' ? state.monthlyBaseline : state.weeklyBaseline;
-  const summary = computeSummary(state.shafts, activeBaseline);
+  const displayCtx = resolveDisplayContext(state);
+  const summary = computeSummary(displayCtx.displayShafts, displayCtx.baseline);
+  const editingFile = state.activeLoadedFileId
+    ? state.savedFiles.find((f) => f.id === state.activeLoadedFileId) || null
+    : null;
 
-  const handleOpenLockModal = (type: 'weekly' | 'monthly') => {
-    setLockModalType(type);
-    setNextPeriodLabel(
-      type === 'weekly'
-        ? `Next Week (${state.settings.reportDate})`
-        : `Next Month (${state.settings.reportDate})`
-    );
+  // Open Save Overall File modal
+  const openSaveFileModal = () => {
+    const defaultDate = state.settings.reportDate || new Date().toISOString().slice(0, 10);
+    if (editingFile) {
+      setSaveFileName(editingFile.name);
+      setSaveFileDate(editingFile.date || defaultDate);
+      setSaveFileNote(editingFile.note || '');
+    } else {
+      setSaveFileName(`WA Progress (${formatDateDisplay(defaultDate)})`);
+      setSaveFileDate(defaultDate);
+      setSaveFileNote('');
+    }
+    setSaveModalOpen(true);
   };
 
-  const handleConfirmLockPeriod = () => {
-    if (!lockModalType) return;
-    const type = lockModalType;
-    const baseToCheck =
-      type === 'weekly' ? state.weeklyBaseline : state.monthlyBaseline;
-    const snapSummary = computeSummary(state.shafts, baseToCheck);
-    const pumpDone = state.pumpStation.layers.map((l) => l.done);
-    const closedLabel =
-      type === 'weekly' ? state.currentWeekLabel : state.currentMonthLabel;
+  // Save as New File or Update Existing File
+  const handleSaveFile = (mode: 'new' | 'update') => {
+    const cleanName = saveFileName.trim() || `WA Progress (${formatDateDisplay(saveFileDate)})`;
+    const cleanDate = saveFileDate || state.settings.reportDate;
+    const nowIso = new Date().toISOString();
 
-    const newSnapshot = createSnapshotFromState(
-      state.shafts,
-      pumpDone,
-      closedLabel,
-      state.settings.reportDate
-    );
-
-    const archiveEntry: HistoryArchiveEntry = {
-      id: `${type}-${Date.now()}`,
-      type,
-      label: closedLabel,
-      date: state.settings.reportDate,
-      capturedAt: new Date().toISOString(),
-      summary: {
-        completedShafts: snapSummary.completedShafts,
-        ongoingShafts: snapSummary.ongoingShafts,
-        completedManholes: snapSummary.completedManholes,
-        ongoingManholes: snapSummary.ongoingManholes,
-        tunnelCompletedKm: Number(
-          (snapSummary.completedTunnelLengthM / 1000).toFixed(3)
+    if (mode === 'update' && state.activeLoadedFileId) {
+      setState((prev) => ({
+        ...prev,
+        lastSavedAt: nowIso,
+        savedFiles: prev.savedFiles.map((f) =>
+          f.id === prev.activeLoadedFileId
+            ? {
+                ...f,
+                name: cleanName,
+                date: cleanDate,
+                note: saveFileNote.trim(),
+                updatedAt: nowIso,
+                shafts: JSON.parse(JSON.stringify(prev.shafts)),
+                pumpStation: JSON.parse(JSON.stringify(prev.pumpStation)),
+              }
+            : f
         ),
-      },
-      snapshot: newSnapshot,
+      }));
+      setSaveModalOpen(false);
+      showToast(
+        isBn
+          ? `"${cleanName}" ফাইল আপডেট সেভ হয়েছে!`
+          : `Updated saved file "${cleanName}"!`
+      );
+      return;
+    }
+
+    const newFile: SavedProgressFile = {
+      id: `file-${Date.now()}`,
+      name: cleanName,
+      date: cleanDate,
+      note: saveFileNote.trim(),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      shafts: JSON.parse(JSON.stringify(state.shafts)),
+      pumpStation: JSON.parse(JSON.stringify(state.pumpStation)),
     };
 
     setState((prev) => ({
       ...prev,
-      lastSavedAt: new Date().toISOString(),
-      weeklyBaseline: type === 'weekly' ? newSnapshot : prev.weeklyBaseline,
-      monthlyBaseline: type === 'monthly' ? newSnapshot : prev.monthlyBaseline,
-      currentWeekLabel:
-        type === 'weekly' ? nextPeriodLabel.trim() || prev.currentWeekLabel : prev.currentWeekLabel,
-      currentMonthLabel:
-        type === 'monthly' ? nextPeriodLabel.trim() || prev.currentMonthLabel : prev.currentMonthLabel,
-      history: [archiveEntry, ...prev.history],
+      lastSavedAt: nowIso,
+      activeLoadedFileId: newFile.id,
+      savedFiles: [newFile, ...prev.savedFiles],
     }));
-
-    setLockModalType(null);
+    setSaveModalOpen(false);
     showToast(
       isBn
-        ? `${type === 'weekly' ? 'সপ্তাহ' : 'মাসিক মিটিং'} সেভ ও লক হয়েছে! এখন নতুন আপডেট শুরু করতে পারেন।`
-        : `${type === 'weekly' ? 'Week' : 'Monthly meeting'} locked! New edits will count toward the next period.`
+        ? `"${cleanName}" (${formatDateDisplay(cleanDate)}) সেভ করা হয়েছে!`
+        : `Saved "${cleanName}" (${formatDateDisplay(cleanDate)})!`
     );
   };
 
+  // Load a saved file into Overall editor for editing
+  const handleEditSavedFile = (file: SavedProgressFile) => {
+    setState((prev) => ({
+      ...prev,
+      lastSavedAt: new Date().toISOString(),
+      viewMode: 'overall',
+      activeLoadedFileId: file.id,
+      shafts: JSON.parse(JSON.stringify(file.shafts)),
+      pumpStation: JSON.parse(JSON.stringify(file.pumpStation)),
+      settings: {
+        ...prev.settings,
+        reportDate: file.date || prev.settings.reportDate,
+      },
+    }));
+    setPreviewFile(null);
+    setFilesModalOpen(false);
+    showToast(
+      isBn
+        ? `"${file.name}" এডিট করার জন্য লোড হয়েছে। পরিবর্তন শেষে Save বাটনে আপডেট করুন।`
+        : `Loaded "${file.name}" into editor. Click Save when done.`
+    );
+  };
+
+  const handleDeleteSavedFile = (file: SavedProgressFile) => {
+    if (state.savedFiles.length <= 1) {
+      showToast(
+        isBn
+          ? 'অন্তত একটি সেভ করা ফাইল রাখা প্রয়োজন।'
+          : 'Keep at least one saved file for comparisons.'
+      );
+      return;
+    }
+    if (
+      !window.confirm(
+        isBn
+          ? `"${file.name}" ফাইলটি কি মুছে ফেলতে চান?`
+          : `Delete saved file "${file.name}"?`
+      )
+    ) {
+      return;
+    }
+    setState((prev) => {
+      const remaining = prev.savedFiles.filter((f) => f.id !== file.id);
+      const fallbackId = remaining[0]?.id || '';
+      return {
+        ...prev,
+        activeLoadedFileId:
+          prev.activeLoadedFileId === file.id ? null : prev.activeLoadedFileId,
+        weeklyCompare: {
+          file1Id:
+            prev.weeklyCompare.file1Id === file.id
+              ? fallbackId
+              : prev.weeklyCompare.file1Id,
+          file2Id:
+            prev.weeklyCompare.file2Id === file.id
+              ? LIVE_WORKSPACE_ID
+              : prev.weeklyCompare.file2Id,
+        },
+        monthlyCompare: {
+          file1Id:
+            prev.monthlyCompare.file1Id === file.id
+              ? fallbackId
+              : prev.monthlyCompare.file1Id,
+          file2Id:
+            prev.monthlyCompare.file2Id === file.id
+              ? LIVE_WORKSPACE_ID
+              : prev.monthlyCompare.file2Id,
+        },
+        savedFiles: remaining,
+      };
+    });
+    if (previewFile?.id === file.id) setPreviewFile(null);
+    showToast(isBn ? 'ফাইলটি মুছে ফেলা হয়েছে।' : 'File deleted.');
+  };
+
   const handleExport = async (
-    kind: 'pdf' | 'png' | 'svg' | 'dxf' | 'xlsx' | 'json' | 'print'
+    kind: 'pdf' | 'png' | 'svg' | 'dxf' | 'xlsx' | 'json' | 'print',
+    customSvg?: SVGSVGElement | null,
+    customLabel?: string
   ) => {
     setShowExportMenu(false);
-    const dateTag = state.settings.reportDate || 'report';
-    const modeTag = state.viewMode;
+    const dateTag = customLabel || state.settings.reportDate || 'report';
+    const modeTag = customLabel ? 'saved' : state.viewMode;
     try {
       if (kind === 'print') {
         window.print();
@@ -188,23 +296,24 @@ export function App() {
         showToast(isBn ? 'AutoCAD DXF এক্সপোর্ট হয়েছে!' : 'AutoCAD DXF exported!');
         return;
       }
-      if (!svgRef.current) return;
+      const targetSvg = customSvg || svgRef.current;
+      if (!targetSvg) return;
       if (kind === 'svg') {
-        exportSvgFile(svgRef.current, `WA-Progress-A1-${modeTag}-${dateTag}.svg`);
+        exportSvgFile(targetSvg, `WA-Progress-A1-${modeTag}-${dateTag}.svg`);
         showToast(isBn ? 'Vector SVG ডাউনলোড হয়েছে!' : 'SVG exported!');
         return;
       }
       if (kind === 'pdf') {
         setExportBusy(isBn ? 'A1 PDF তৈরি হচ্ছে...' : 'Generating A1 Vector PDF...');
         await exportA1VectorPdf(
-          svgRef.current,
+          targetSvg,
           `WA-Progress-A1-${modeTag}-${dateTag}.pdf`
         );
         showToast(isBn ? 'A1 Vector PDF ডাউনলোড হয়েছে!' : 'A1 Vector PDF exported!');
       } else if (kind === 'png') {
         setExportBusy(isBn ? 'High-Res PNG তৈরি হচ্ছে...' : 'Rendering High-Res PNG...');
         await exportHighResPng(
-          svgRef.current,
+          targetSvg,
           `WA-Progress-A1-${modeTag}-${dateTag}.png`
         );
         showToast(isBn ? 'High-Res PNG ডাউনলোড হয়েছে!' : 'PNG exported!');
@@ -282,6 +391,34 @@ export function App() {
     }
   })();
 
+  const activeCompare =
+    state.viewMode === 'monthly' ? state.monthlyCompare : state.weeklyCompare;
+
+  const updateCompare = (side: 'file1Id' | 'file2Id', val: string) => {
+    const key = state.viewMode === 'monthly' ? 'monthlyCompare' : 'weeklyCompare';
+    setState((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        [side]: val,
+      },
+    }));
+  };
+
+  const previewState: AppState | null = previewFile
+    ? {
+        ...state,
+        viewMode: 'overall',
+        shafts: previewFile.shafts,
+        pumpStation: previewFile.pumpStation,
+        settings: {
+          ...state.settings,
+          reportDate: previewFile.date || state.settings.reportDate,
+          sectionTitle: `${state.settings.sectionTitle} — [${previewFile.name}]`,
+        },
+      }
+    : null;
+
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-slate-100 text-slate-900">
       {/* Hidden file inputs */}
@@ -303,21 +440,15 @@ export function App() {
       {/* ==================== TOP HEADER TOOLBAR ==================== */}
       <header className="no-print z-30 flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-slate-900 px-3 py-2 text-white shadow-sm">
         {/* Brand & Autosave Status */}
-        <div className="flex items-center gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wider">
-                A1 CAD
-              </span>
-              <h1 className="text-sm font-bold tracking-tight">
-                WA Progress Studio
-              </h1>
-              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-950/90 border border-emerald-500/40 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
-                <Check className="h-3 w-3" />
-                {isBn ? 'অটো-সেভড' : 'Auto-saved'} {savedTimeStr}
-              </span>
-            </div>
-          </div>
+        <div className="flex items-center gap-2.5">
+          <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wider">
+            A1 CAD
+          </span>
+          <h1 className="text-sm font-bold tracking-tight">WA Progress Studio</h1>
+          <span className="hidden md:inline-flex items-center gap-1 rounded-full bg-emerald-950/90 border border-emerald-500/40 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+            <Check className="h-3 w-3" />
+            {isBn ? 'অটো-সেভড' : 'Auto-saved'} {savedTimeStr}
+          </span>
         </div>
 
         {/* View Mode Switcher (Overall / Weekly / Monthly) */}
@@ -332,12 +463,12 @@ export function App() {
               {
                 id: 'weekly',
                 bn: 'সাপ্তাহিক (Weekly)',
-                en: 'Weekly Progress',
+                en: 'Weekly Compare',
               },
               {
                 id: 'monthly',
                 bn: 'মাসিক (Monthly)',
-                en: 'Monthly Progress',
+                en: 'Monthly Compare',
               },
             ] as { id: ViewMode; bn: string; en: string }[]
           ).map((m) => (
@@ -359,28 +490,35 @@ export function App() {
           ))}
         </div>
 
-        {/* Action Buttons: Period Rollover, Export, Language, Panel Toggle */}
-        <div className="flex items-center gap-1.5">
-          {state.viewMode === 'weekly' && (
-            <button
-              onClick={() => handleOpenLockModal('weekly')}
-              className="flex items-center gap-1.5 rounded-md bg-amber-500 px-2.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-400 transition"
-              title="Save this week & start updating next week from here"
-            >
-              <Lock className="h-3.5 w-3.5" />
-              {isBn ? 'সপ্তাহ শেষ ও নতুন সপ্তাহ শুরু' : 'Close Week → Next'}
-            </button>
-          )}
-          {state.viewMode === 'monthly' && (
-            <button
-              onClick={() => handleOpenLockModal('monthly')}
-              className="flex items-center gap-1.5 rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-cyan-400 transition"
-              title="Save monthly meeting snapshot & start next month"
-            >
-              <CalendarCheck className="h-3.5 w-3.5" />
-              {isBn ? 'মিটিং লক ও নতুন মাস শুরু' : 'Close Month → Next'}
-            </button>
-          )}
+        {/* Action Buttons: Save File, Saved Files Manager, Export, Lang, Panel */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Save Overall with Name & Date */}
+          <button
+            onClick={openSaveFileModal}
+            className="flex items-center gap-1.5 rounded-md bg-emerald-500 px-2.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition"
+            title={
+              isBn
+                ? 'বর্তমান প্রোগ্রেস নাম ও তারিখ দিয়ে সেভ করুন'
+                : 'Save Overall progress with Name & Date'
+            }
+          >
+            <Save className="h-3.5 w-3.5" />
+            {isBn ? 'ফাইল সেভ' : 'Save File'}
+          </button>
+
+          {/* Saved Files Manager Button */}
+          <button
+            onClick={() => setFilesModalOpen(true)}
+            className="flex items-center gap-1.5 rounded-md border border-indigo-400/50 bg-indigo-600/90 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 transition"
+            title={
+              isBn
+                ? 'সব সেভ করা ফাইল দেখুন, এডিট ও ডাউনলোড করুন'
+                : 'View, Edit & Download all saved files'
+            }
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            {isBn ? `সেভ করা ফাইল (${state.savedFiles.length})` : `Saved Files (${state.savedFiles.length})`}
+          </button>
 
           {/* Direct A1 PDF quick button */}
           <button
@@ -519,7 +657,127 @@ export function App() {
         </div>
       </header>
 
-      {/* ==================== LIVE KPI & PERIOD SUB-BAR ==================== */}
+      {/* ==================== EDITING SAVED FILE BANNER (OVERALL MODE) ==================== */}
+      {state.viewMode === 'overall' && editingFile && (
+        <div className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs text-indigo-950">
+          <div className="flex items-center gap-2">
+            <Pencil className="h-3.5 w-3.5 text-indigo-700" />
+            <span>
+              {isBn ? 'এডিট করছেন:' : 'Editing Saved File:'}{' '}
+              <strong>{editingFile.name}</strong> ({formatDateDisplay(editingFile.date)})
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openSaveFileModal}
+              className="rounded bg-indigo-600 px-2.5 py-0.5 font-bold text-white hover:bg-indigo-700"
+            >
+              {isBn ? 'আপডেট / নতুন সেভ' : 'Update / Save Copy'}
+            </button>
+            <button
+              onClick={() =>
+                setState((p) => ({ ...p, activeLoadedFileId: null }))
+              }
+              className="rounded border border-indigo-300 bg-white px-2 py-0.5 font-semibold text-indigo-800 hover:bg-indigo-100"
+            >
+              {isBn ? 'সম্পন্ন' : 'Detach'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== 2-FILE COMPARISON BAR (WEEKLY / MONTHLY) ==================== */}
+      {state.viewMode !== 'overall' && (
+        <div
+          className={`no-print flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-xs ${
+            state.viewMode === 'weekly'
+              ? 'border-amber-200 bg-amber-50/90 text-amber-950'
+              : 'border-cyan-200 bg-cyan-50/90 text-cyan-950'
+          }`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold uppercase tracking-wide">
+              {state.viewMode === 'weekly'
+                ? isBn
+                  ? 'সাপ্তাহিক তুলনা (২টি ফাইল):'
+                  : 'Weekly 2-File Compare:'
+                : isBn
+                ? 'মাসিক তুলনা (২টি ফাইল):'
+                : 'Monthly 2-File Compare:'}
+            </span>
+
+            {/* 1st File Selector (Previous Week / Month) */}
+            <div className="flex items-center gap-1.5">
+              <label className="font-semibold">
+                {state.viewMode === 'weekly'
+                  ? isBn
+                    ? '১ম (Previous Week):'
+                    : '1st (Prev Week):'
+                  : isBn
+                  ? '১ম (Previous Month):'
+                  : '1st (Prev Month):'}
+              </label>
+              <select
+                value={activeCompare.file1Id}
+                onChange={(e) => updateCompare('file1Id', e.target.value)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-900 shadow-xs"
+              >
+                {state.savedFiles.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} — {formatDateDisplay(f.date)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <ArrowRight className="h-4 w-4 text-slate-500" />
+
+            {/* 2nd File Selector (Last / Updated Report) */}
+            <div className="flex items-center gap-1.5">
+              <label className="font-semibold">
+                {state.viewMode === 'weekly'
+                  ? isBn
+                    ? '২য় (Last Week / Updated):'
+                    : '2nd (Last Week):'
+                  : isBn
+                  ? '২য় (Updated / Final):'
+                  : '2nd (Final Report):'}
+              </label>
+              <select
+                value={activeCompare.file2Id}
+                onChange={(e) => updateCompare('file2Id', e.target.value)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-900 shadow-xs"
+              >
+                <option value={LIVE_WORKSPACE_ID}>
+                  ★ {isBn ? 'বর্তমান চলমান কাজ (Live Workspace)' : 'Current Live Workspace'}
+                </option>
+                {state.savedFiles.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} — {formatDateDisplay(f.date)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-white px-2.5 py-0.5 font-bold border border-slate-300 text-slate-900">
+              {state.viewMode === 'weekly'
+                ? isBn
+                  ? 'সাপ্তাহিক অগ্রগতি:'
+                  : 'Weekly Delta:'
+                : isBn
+                ? 'মাসিক অগ্রগতি:'
+                : 'Monthly Delta:'}{' '}
+              +{summary.delta.addedShaftsCompleted} Shafts · +{summary.delta.addedLayers} Layers · +
+              {summary.delta.addedTunnelM.toFixed(1)}m Tunnel · +
+              {summary.delta.addedCastingCompleted + summary.delta.addedPrecastCompleted} MH parts
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== LIVE KPI & ZOOM SUB-BAR ==================== */}
       <div className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-1.5 text-xs">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5">
@@ -554,22 +812,13 @@ export function App() {
             </span>
           </div>
 
-          {state.viewMode !== 'overall' && (
-            <div className="flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-300 px-2.5 py-0.5 font-bold text-amber-900">
-              <span>
-                {state.viewMode === 'weekly'
-                  ? isBn
-                    ? 'এই সপ্তাহে যোগ হয়েছে:'
-                    : 'This Week Added:'
-                  : isBn
-                  ? 'এই মাসে যোগ হয়েছে:'
-                  : 'This Month Added:'}
-              </span>
-              <span>
-                +{summary.delta.addedLayers} layers · +{summary.delta.addedTunnelM.toFixed(1)}m tunnel
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-slate-500">Pump SPS:</span>
+            <span className="rounded bg-teal-100 px-1.5 py-0.5 font-bold text-teal-800">
+              Lower {displayCtx.displayPump.layers.filter((l) => l.status === 'complete').length}/5 · MR:{' '}
+              {displayCtx.displayPump.machineRoom.status.toUpperCase()}
+            </span>
+          </div>
         </div>
 
         {/* Zoom Controls */}
@@ -595,7 +844,11 @@ export function App() {
             onClick={() => setZoom(1)}
             className="ml-1 rounded border border-slate-200 px-2 py-0.5 text-[11px] font-semibold hover:bg-slate-100"
           >
-            {zoom === 1 ? <Maximize2 className="h-3 w-3 inline mr-1" /> : <Minimize2 className="h-3 w-3 inline mr-1" />}
+            {zoom === 1 ? (
+              <Maximize2 className="h-3 w-3 inline mr-1" />
+            ) : (
+              <Minimize2 className="h-3 w-3 inline mr-1" />
+            )}
             Fit A1
           </button>
         </div>
@@ -625,12 +878,12 @@ export function App() {
           </div>
           <div className="no-print mt-2 text-center text-[11px] text-slate-600">
             {isBn
-              ? 'টিপস: যেকোনো Shaft বা Tunnel বারের ওপর ক্লিক করে ডান পাশ থেকে এডিট করুন। সব পরিবর্তন সাথে সাথে ব্রাউজারে অটো-সেভ হয়।'
-              : 'Tip: Click any Shaft or Tunnel bar on the A1 drawing to edit. All edits auto-save instantaneously.'}
+              ? 'টিপস: যেকোনো Shaft, Tunnel বা Pump Station-এ ক্লিক করে ডান পাশ থেকে এডিট করুন। সব পরিবর্তন সাথে সাথে ব্রাউজারে অটো-সেভ হয়।'
+              : 'Tip: Click any Shaft, Tunnel bar, or Pump Station on the A1 drawing to edit. All edits auto-save instantaneously.'}
           </div>
         </main>
 
-        {/* Right: Shaft & Bulk Editor */}
+        {/* Right: Shaft & Pump Station Editor */}
         {showInspector && (
           <div className="no-print w-full max-w-[390px] shrink-0 h-full">
             <ShaftEditorPanel
@@ -650,62 +903,333 @@ export function App() {
         )}
       </div>
 
-      {/* ==================== LOCK PERIOD / ROLLOVER MODAL ==================== */}
-      {lockModalType && (
+      {/* ==================== SAVE OVERALL FILE MODAL (NAME + DATE) ==================== */}
+      {saveModalOpen && (
         <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl space-y-4">
-            <h2 className="text-base font-bold text-slate-900">
-              {lockModalType === 'weekly'
-                ? isBn
-                  ? 'এই সপ্তাহের প্রোগ্রেস সেভ ও লক করুন'
-                  : 'Lock Current Week & Start Next Week'
-                : isBn
-                ? 'এই মাসের মিটিং প্রোগ্রেস সেভ ও লক করুন'
-                : 'Lock Current Monthly Meeting & Start Next Month'}
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-base font-bold text-slate-900">
+                <Save className="h-4 w-4 text-emerald-600" />
+                {isBn
+                  ? 'ফাইল সেভ করুন (নাম ও তারিখ)'
+                  : 'Save Progress File (Name & Date)'}
+              </h2>
+              <button
+                onClick={() => setSaveModalOpen(false)}
+                className="rounded p-1 text-slate-500 hover:bg-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
               {isBn
-                ? 'এটি করলে আজ পর্যন্ত সম্পন্ন হওয়া সব কাজ হিস্টোরিতে সেভ হয়ে "আগের সপ্তাহ/মিটিং পর্যন্ত কাজ" হিসেবে লক হবে। এরপর থেকে আপনি যত নতুন কাজ ইনপুট দেবেন, সেগুলো স্বয়ংক্রিয়ভাবে নতুন রঙ হিসেবে দেখাবে।'
-                : 'This archives the current progress into History and sets it as the new baseline. Any subsequent updates will highlight as new progress in the next period.'}
+                ? 'সেভ করা ফাইলটি "সেভ করা ফাইল" বাটনে জমা থাকবে এবং Weekly ও Monthly রিপোর্টে ২টি ফাইল তুলনা করতে ব্যবহার করা যাবে।'
+                : 'Saved files appear in Saved Files and can be selected as File 1 or File 2 in Weekly & Monthly comparison modes.'}
             </p>
 
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs space-y-1">
-              <div className="font-bold text-slate-800">
-                {isBn ? 'বর্তমান অবস্থা যা লক হতে যাচ্ছে:' : 'Snapshot Summary:'}
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700">
+                  {isBn ? 'ফাইলের নাম (File Name):' : 'File Name:'}
+                </label>
+                <input
+                  type="text"
+                  value={saveFileName}
+                  onChange={(e) => setSaveFileName(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-medium"
+                  placeholder="e.g. Week 46 Report / Nov Final"
+                />
               </div>
-              <div>• Shafts Completed: {summary.completedShafts} / 37 ({summary.ongoingShafts} On-going)</div>
-              <div>• Manholes: Cast {summary.castingCompleteCount}/37, Precast {summary.precastCompleteCount}/37</div>
-              <div>• Tunnel Completed: {(summary.completedTunnelLengthM / 1000).toFixed(3)} km</div>
+              <div>
+                <label className="block font-semibold text-slate-700">
+                  {isBn ? 'তারিখ (Date):' : 'Date:'}
+                </label>
+                <input
+                  type="date"
+                  value={saveFileDate}
+                  onChange={(e) => setSaveFileDate(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-medium"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700">
+                  {isBn ? 'মন্তব্য / নোট (ঐচ্ছিক):' : 'Note (optional):'}
+                </label>
+                <input
+                  type="text"
+                  value={saveFileNote}
+                  onChange={(e) => setSaveFileNote(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                  placeholder={isBn ? 'যেমন: মিটিংয়ের পর আপডেট' : 'e.g. Site inspection update'}
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700">
-                {isBn ? 'পরবর্তী সপ্তাহ/মাসের নাম লিখুন:' : 'Label for Next Period:'}
-              </label>
-              <input
-                type="text"
-                value={nextPeriodLabel}
-                onChange={(e) => setNextPeriodLabel(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-xs font-medium"
-                placeholder="e.g. Week 47 (16-22 Nov 2026)"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
               <button
-                onClick={() => setLockModalType(null)}
+                onClick={() => setSaveModalOpen(false)}
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
                 {isBn ? 'বাতিল' : 'Cancel'}
               </button>
+              {editingFile && (
+                <button
+                  onClick={() => handleSaveFile('update')}
+                  className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700"
+                >
+                  {isBn ? 'আগের ফাইলে আপডেট' : 'Update Existing File'}
+                </button>
+              )}
               <button
-                onClick={handleConfirmLockPeriod}
-                className="rounded-md bg-blue-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-blue-700"
+                onClick={() => handleSaveFile('new')}
+                className="flex items-center gap-1 rounded-md bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
               >
-                {isBn ? 'হ্যাঁ, সেভ ও লক করুন' : 'Lock & Start Next'}
+                <Plus className="h-3.5 w-3.5" />
+                {isBn ? 'নতুন ফাইল সেভ করুন' : 'Save New File'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== SAVED FILES MANAGER MODAL (VIEW / EDIT / DOWNLOAD) ==================== */}
+      {filesModalOpen && (
+        <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-5xl flex-col rounded-xl bg-white shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-900 px-5 py-3 text-white">
+              <div className="flex items-center gap-2">
+                <FolderOpen className="h-5 w-5 text-indigo-300" />
+                <h2 className="text-sm font-bold">
+                  {previewFile
+                    ? `${isBn ? 'ফাইল প্রিভিউ:' : 'Previewing File:'} ${previewFile.name} (${formatDateDisplay(previewFile.date)})`
+                    : isBn
+                    ? `সেভ করা সব ফাইল (${state.savedFiles.length}টি)`
+                    : `All Saved Progress Files (${state.savedFiles.length})`}
+                </h2>
+              </div>
+              <div className="flex items-center gap-2">
+                {previewFile && (
+                  <button
+                    onClick={() => setPreviewFile(null)}
+                    className="rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-semibold hover:bg-slate-700"
+                  >
+                    ← {isBn ? 'সব ফাইল তালিকা' : 'Back to Files List'}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setPreviewFile(null);
+                    setFilesModalOpen(false);
+                  }}
+                  className="rounded p-1 text-slate-300 hover:bg-slate-800 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Body: either Preview A1 Sheet OR Saved Files List */}
+            {previewFile && previewState ? (
+              <div className="flex flex-1 flex-col overflow-hidden bg-slate-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-white px-4 py-2 text-xs">
+                  <div className="text-slate-700">
+                    <strong>{previewFile.name}</strong> · Date:{' '}
+                    {formatDateDisplay(previewFile.date)}
+                    {previewFile.note && (
+                      <span className="ml-2 text-slate-500">({previewFile.note})</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => handleEditSavedFile(previewFile)}
+                      className="flex items-center gap-1 rounded bg-indigo-600 px-2.5 py-1 font-bold text-white hover:bg-indigo-700"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      {isBn ? 'এই ফাইল এডিট করুন' : 'Edit This File'}
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleExport(
+                          'pdf',
+                          previewSvgRef.current,
+                          `${previewFile.date}-${previewFile.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
+                        )
+                      }
+                      className="flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1 font-bold text-white hover:bg-blue-700"
+                    >
+                      <FileText className="h-3.5 w-3.5" /> A1 PDF
+                    </button>
+                    <button
+                      onClick={() =>
+                        exportSavedFileExcel(
+                          previewFile,
+                          state.settings,
+                          `WA-${previewFile.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}-${previewFile.date}.xlsx`
+                        )
+                      }
+                      className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-bold text-white hover:bg-emerald-700"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5" /> Excel (.xlsx)
+                    </button>
+                    <button
+                      onClick={() =>
+                        exportSavedFileJson(
+                          previewFile,
+                          `WA-${previewFile.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}-${previewFile.date}.json`
+                        )
+                      }
+                      className="flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <Download className="h-3.5 w-3.5" /> JSON
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-auto p-4">
+                  <div className="mx-auto max-w-[1400px] bg-white shadow-xl">
+                    <A1SheetDrawing
+                      state={previewState}
+                      selectedShaftId=""
+                      onSelectShaft={() => {}}
+                      svgRef={previewSvgRef}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                  <span>
+                    {isBn
+                      ? 'এখান থেকে আগের যেকোনো সেভ করা ফাইল View (দেখা), Edit (এডিট), এবং Download (PDF / Excel / JSON) করতে পারবেন।'
+                      : 'View, Edit, or Download (PDF / Excel / JSON) any saved progress file below.'}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setFilesModalOpen(false);
+                      openSaveFileModal();
+                    }}
+                    className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-bold text-white hover:bg-emerald-700"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {isBn ? 'বর্তমান অবস্থা নতুন ফাইল হিসেবে সেভ' : 'Save Current Workspace'}
+                  </button>
+                </div>
+
+                {state.savedFiles.map((file) => {
+                  const fSum = computeSummary(file.shafts);
+                  const lowerPumpDone = file.pumpStation.layers.filter(
+                    (l) => l.status === 'complete'
+                  ).length;
+                  const isEditingThis = state.activeLoadedFileId === file.id;
+                  const safeSlug = file.name.replace(/[^a-zA-Z0-9_-]+/g, '_') || 'file';
+
+                  return (
+                    <div
+                      key={file.id}
+                      className={`rounded-xl border bg-white p-3.5 shadow-xs transition ${
+                        isEditingThis ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-slate-200'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-sm font-bold text-slate-900">
+                              {file.name}
+                            </h3>
+                            <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-700">
+                              Date: {formatDateDisplay(file.date)}
+                            </span>
+                            {isEditingThis && (
+                              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                                {isBn ? 'বর্তমানে এডিটেড' : 'Currently Editing'}
+                              </span>
+                            )}
+                          </div>
+                          {file.note && (
+                            <p className="text-xs text-slate-500">{file.note}</p>
+                          )}
+                          <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
+                            <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 font-semibold text-emerald-800">
+                              Shafts: {fSum.completedShafts}/37 Done ({fSum.ongoingShafts} On-going)
+                            </span>
+                            <span className="rounded bg-blue-50 border border-blue-200 px-2 py-0.5 font-semibold text-blue-800">
+                              Manhole: Cast {fSum.castingCompleteCount}/37 · Ring {fSum.precastCompleteCount}/37
+                            </span>
+                            <span className="rounded bg-fuchsia-50 border border-fuchsia-200 px-2 py-0.5 font-semibold text-fuchsia-800">
+                              Tunnel: {(fSum.completedTunnelLengthM / 1000).toFixed(3)} km ({fSum.tunnelPctOverall.toFixed(1)}%)
+                            </span>
+                            <span className="rounded bg-teal-50 border border-teal-200 px-2 py-0.5 font-semibold text-teal-800">
+                              Pump: {lowerPumpDone}/5 ({getPumpLowerStatus(file.pumpStation)}) · MR: {file.pumpStation.machineRoom.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                          <button
+                            onClick={() => setPreviewFile(file)}
+                            className="flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 font-bold text-blue-800 hover:bg-blue-100"
+                            title="View Full A1 Drawing & PDF"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            {isBn ? 'দেখুন (View)' : 'View'}
+                          </button>
+
+                          <button
+                            onClick={() => handleEditSavedFile(file)}
+                            className="flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 font-bold text-indigo-800 hover:bg-indigo-100"
+                            title="Load into Editor"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            {isBn ? 'এডিট (Edit)' : 'Edit'}
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              exportSavedFileExcel(
+                                file,
+                                state.settings,
+                                `WA-${safeSlug}-${file.date}.xlsx`
+                              );
+                              showToast(
+                                isBn ? `"${file.name}" Excel ডাউনলোড হয়েছে!` : 'Excel downloaded!'
+                              );
+                            }}
+                            className="flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 font-bold text-emerald-800 hover:bg-emerald-100"
+                            title="Download Excel (.xlsx)"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Excel
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              exportSavedFileJson(file, `WA-${safeSlug}-${file.date}.json`);
+                              showToast(
+                                isBn ? `"${file.name}" JSON ডাউনলোড হয়েছে!` : 'JSON downloaded!'
+                              );
+                            }}
+                            className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 font-semibold text-slate-700 hover:bg-slate-100"
+                            title="Download JSON"
+                          >
+                            JSON
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteSavedFile(file)}
+                            className="rounded-md border border-rose-200 bg-white p-1.5 text-rose-600 hover:bg-rose-50"
+                            title={isBn ? 'মুছে ফেলুন' : 'Delete'}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

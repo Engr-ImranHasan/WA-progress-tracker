@@ -38,14 +38,34 @@ export interface PumpLayer {
   name: string;
   sDate: string;
   eDate: string;
-  done: boolean;
+  status: WorkStatus;
+  done?: boolean; // legacy compat
+}
+
+export interface PumpMachineRoomData {
+  status: WorkStatus;
+  sDate: string;
+  eDate: string;
 }
 
 export interface PumpStationData {
   totalHeightM: number;
-  completedHeightM: number;
+  castingCompleteM: number;
   sinkingCompletedM: number;
+  completedHeightM?: number; // legacy compat
   layers: PumpLayer[];
+  machineRoom: PumpMachineRoomData;
+}
+
+export interface SavedProgressFile {
+  id: string;
+  name: string;
+  date: string; // YYYY-MM-DD
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+  shafts: ShaftRecord[];
+  pumpStation: PumpStationData;
 }
 
 export interface ShaftSnapshotItem {
@@ -62,6 +82,7 @@ export interface PeriodBaseline {
   capturedAt: string;
   shafts: Record<string, ShaftSnapshotItem>;
   pumpLayersDone: boolean[];
+  pumpMachineRoomStatus?: WorkStatus;
 }
 
 export interface HistoryArchiveEntry {
@@ -115,6 +136,11 @@ export interface SheetSettings {
   showPumpStation: boolean;
 }
 
+export interface ComparePairSelection {
+  file1Id: string; // ID from savedFiles
+  file2Id: string; // '__LIVE__' or ID from savedFiles
+}
+
 export interface AppState {
   version: number;
   lastSavedAt: string;
@@ -124,6 +150,10 @@ export interface AppState {
   currentMonthLabel: string;
   shafts: ShaftRecord[];
   pumpStation: PumpStationData;
+  savedFiles: SavedProgressFile[];
+  activeLoadedFileId: string | null;
+  weeklyCompare: ComparePairSelection;
+  monthlyCompare: ComparePairSelection;
   weeklyBaseline: PeriodBaseline;
   monthlyBaseline: PeriodBaseline;
   history: HistoryArchiveEntry[];

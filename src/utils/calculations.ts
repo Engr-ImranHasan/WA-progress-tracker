@@ -1,10 +1,14 @@
 import {
   AppState,
   PeriodBaseline,
+  PumpStationData,
+  SavedProgressFile,
   ShaftRecord,
   ShaftSnapshotItem,
   WorkStatus,
 } from '../types';
+
+export const LIVE_WORKSPACE_ID = '__LIVE__';
 
 export function formatDateDisplay(iso: string): string {
   if (!iso) return '';
@@ -55,7 +59,6 @@ export function getShaftStatus(s: ShaftRecord): WorkStatus {
     return 'complete';
   }
   if (allLayersDone && (s.bottomSlabDone || Boolean(s.shaftEDate))) {
-    // If all layers + bottom slab done even without E.Date, or E.Date set with all layers done
     if (s.bottomSlabDone && !s.shaftSDate && !s.shaftEDate) return 'complete';
     if (Boolean(s.shaftEDate)) return 'complete';
   }
@@ -85,11 +88,21 @@ export function getTunnelStatus(s: ShaftRecord): WorkStatus {
   return 'ongoing';
 }
 
+export function getPumpLowerStatus(ps: PumpStationData): WorkStatus {
+  const allDone = ps.layers.every((l) => l.status === 'complete');
+  if (allDone) return 'complete';
+  const anyStarted = ps.layers.some(
+    (l) => l.status !== 'remaining' || Boolean(l.sDate)
+  );
+  return anyStarted ? 'ongoing' : 'remaining';
+}
+
 export function createSnapshotFromState(
   shafts: ShaftRecord[],
   pumpLayersDone: boolean[],
   label: string,
-  date: string
+  date: string,
+  pumpMachineRoomStatus?: WorkStatus
 ): PeriodBaseline {
   const map: Record<string, ShaftSnapshotItem> = {};
   for (const s of shafts) {
@@ -107,7 +120,18 @@ export function createSnapshotFromState(
     capturedAt: new Date().toISOString(),
     shafts: map,
     pumpLayersDone: [...pumpLayersDone],
+    pumpMachineRoomStatus,
   };
+}
+
+export function snapshotFromSavedFile(file: SavedProgressFile): PeriodBaseline {
+  return createSnapshotFromState(
+    file.shafts,
+    file.pumpStation.layers.map((l) => l.status === 'complete'),
+    `${file.name} (${formatDateDisplay(file.date)})`,
+    file.date,
+    file.pumpStation.machineRoom.status
+  );
 }
 
 export interface ProgressSummary {
@@ -133,19 +157,20 @@ export interface ProgressSummary {
     DN1600: { totalM: number; completedM: number };
   };
 
-  // Incremental delta vs active baseline (weekly or monthly)
   delta: {
     addedLayers: number;
     addedShaftsCompleted: number;
     addedCastingCompleted: number;
     addedPrecastCompleted: number;
     addedTunnelM: number;
+    addedPumpLayers: number;
   };
 }
 
 export function computeSummary(
   shafts: ShaftRecord[],
-  baseline?: PeriodBaseline
+  baseline?: PeriodBaseline,
+  pumpStation?: PumpStationData
 ): ProgressSummary {
   let completedShafts = 0;
   let ongoingShafts = 0;
@@ -171,6 +196,7 @@ export function computeSummary(
   let addedCastingCompleted = 0;
   let addedPrecastCompleted = 0;
   let addedTunnelM = 0;
+  let addedPumpLayers = 0;
 
   for (const s of shafts) {
     const st = getShaftStatus(s);
@@ -199,8 +225,7 @@ export function computeSummary(
         const prevDone = (b.layerFlags || []).slice(0, s.totalLayers).filter(Boolean).length;
         addedLayers += Math.max(0, curDone - prevDone);
 
-        const prevShaftComplete =
-          prevDone >= s.totalLayers && b.bottomSlabDone;
+        const prevShaftComplete = prevDone >= s.totalLayers && b.bottomSlabDone;
         if (st === 'complete' && !prevShaftComplete) {
           addedShaftsCompleted++;
         }
@@ -212,6 +237,13 @@ export function computeSummary(
         );
       }
     }
+  }
+
+  if (baseline && pumpStation) {
+    pumpStation.layers.forEach((l, i) => {
+      const wasDone = Boolean(baseline.pumpLayersDone?.[i]);
+      if (l.status === 'complete' && !wasDone) addedPumpLayers++;
+    });
   }
 
   return {
@@ -238,6 +270,7 @@ export function computeSummary(
       addedCastingCompleted,
       addedPrecastCompleted,
       addedTunnelM,
+      addedPumpLayers,
     },
   };
 }
@@ -254,6 +287,95 @@ export function resizeShaftLayers(
   return res;
 }
 
+export function normalizePumpStation(
+  raw: Partial<PumpStationData> | undefined,
+  fallback: PumpStationData
+): PumpStationData {
+  if (!raw) return JSON.parse(JSON.stringify(fallback));
+  const layers = Array.isArray(raw.layers) && raw.layers.length > 0
+    ? raw.layers.map((ly, i) => ({
+        name: ly.name || `${i + 1} Layer`,
+        sDate: ly.sDate || '',
+        eDate: ly.eDate || '',
+        status:
+          ly.status ||
+          (ly.done ? 'complete' : ly.sDate ? 'ongoing' : 'remaining'),
+      }))
+    : JSON.parse(JSON.stringify(fallback.layers));
+
+  return {
+    totalHeightM: Number(raw.totalHeightM ?? fallback.totalHeightM),
+    castingCompleteM: Number(
+      raw.castingCompleteM ?? raw.completedHeightM ?? fallback.castingCompleteM
+    ),
+    sinkingCompletedM: Number(raw.sinkingCompletedM ?? fallback.sinkingCompletedM),
+    layers,
+    machineRoom: {
+      status: raw.machineRoom?.status || fallback.machineRoom.status,
+      sDate: raw.machineRoom?.sDate ?? fallback.machineRoom.sDate,
+      eDate: raw.machineRoom?.eDate ?? fallback.machineRoom.eDate,
+    },
+  };
+}
+
+export interface DisplayContext {
+  displayShafts: ShaftRecord[];
+  displayPump: PumpStationData;
+  baseline: PeriodBaseline;
+  file1Label: string;
+  file2Label: string;
+  isFrozenCompare: boolean;
+}
+
+export function resolveDisplayContext(state: AppState): DisplayContext {
+  if (state.viewMode === 'overall') {
+    return {
+      displayShafts: state.shafts,
+      displayPump: state.pumpStation,
+      baseline: state.weeklyBaseline,
+      file1Label: '',
+      file2Label: 'Live Workspace',
+      isFrozenCompare: false,
+    };
+  }
+
+  const compare =
+    state.viewMode === 'monthly' ? state.monthlyCompare : state.weeklyCompare;
+  const fallbackBase =
+    state.viewMode === 'monthly' ? state.monthlyBaseline : state.weeklyBaseline;
+
+  const file1 = state.savedFiles.find((f) => f.id === compare?.file1Id);
+  const baseline = file1 ? snapshotFromSavedFile(file1) : fallbackBase;
+  const file1Label = file1
+    ? `${file1.name} (${formatDateDisplay(file1.date)})`
+    : fallbackBase.label;
+
+  const file2 =
+    compare?.file2Id && compare.file2Id !== LIVE_WORKSPACE_ID
+      ? state.savedFiles.find((f) => f.id === compare.file2Id)
+      : undefined;
+
+  if (file2) {
+    return {
+      displayShafts: file2.shafts,
+      displayPump: file2.pumpStation,
+      baseline,
+      file1Label,
+      file2Label: `${file2.name} (${formatDateDisplay(file2.date)})`,
+      isFrozenCompare: true,
+    };
+  }
+
+  return {
+    displayShafts: state.shafts,
+    displayPump: state.pumpStation,
+    baseline,
+    file1Label,
+    file2Label: `Current Workspace (${formatDateDisplay(state.settings.reportDate)})`,
+    isFrozenCompare: false,
+  };
+}
+
 export function sanitizeLoadedState(
   parsed: Partial<AppState>,
   fallback: AppState
@@ -261,12 +383,30 @@ export function sanitizeLoadedState(
   if (!parsed || !Array.isArray(parsed.shafts) || parsed.shafts.length === 0) {
     return fallback;
   }
+  const pumpStation = normalizePumpStation(parsed.pumpStation, fallback.pumpStation);
+  const savedFiles: SavedProgressFile[] = Array.isArray(parsed.savedFiles) && parsed.savedFiles.length > 0
+    ? parsed.savedFiles.map((f) => ({
+        ...f,
+        pumpStation: normalizePumpStation(f.pumpStation, fallback.pumpStation),
+      }))
+    : fallback.savedFiles;
+
   return {
     ...fallback,
     ...parsed,
+    pumpStation,
+    savedFiles,
+    activeLoadedFileId: parsed.activeLoadedFileId ?? null,
+    weeklyCompare: parsed.weeklyCompare || {
+      file1Id: savedFiles[0]?.id || '',
+      file2Id: LIVE_WORKSPACE_ID,
+    },
+    monthlyCompare: parsed.monthlyCompare || {
+      file1Id: savedFiles[0]?.id || '',
+      file2Id: LIVE_WORKSPACE_ID,
+    },
     colors: { ...fallback.colors, ...(parsed.colors || {}) },
     settings: { ...fallback.settings, ...(parsed.settings || {}) },
-    pumpStation: { ...fallback.pumpStation, ...(parsed.pumpStation || {}) },
     weeklyBaseline: parsed.weeklyBaseline || fallback.weeklyBaseline,
     monthlyBaseline: parsed.monthlyBaseline || fallback.monthlyBaseline,
     history: Array.isArray(parsed.history) ? parsed.history : fallback.history,

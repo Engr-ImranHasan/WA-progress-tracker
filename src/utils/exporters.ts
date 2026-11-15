@@ -1,17 +1,19 @@
 import { jsPDF } from 'jspdf';
 import { svg2pdf } from 'svg2pdf.js';
 import * as XLSX from 'xlsx';
-import { AppState, PipeDia, ShaftRecord, ShaftType } from '../types';
+import { AppState, PipeDia, PumpStationData, SavedProgressFile, ShaftRecord, ShaftType, SheetSettings } from '../types';
 import {
   calcDurationDays,
   computeSummary,
   formatDateDisplay,
   getManholeStatus,
+  getPumpLowerStatus,
   getShaftCompletedLayersCount,
   getShaftStatus,
   getTunnelStatus,
   parseDateInput,
   resizeShaftLayers,
+  resolveDisplayContext,
 } from './calculations';
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -113,16 +115,31 @@ export function exportJsonBackup(state: AppState, filename: string): void {
   triggerDownload(new Blob([json], { type: 'application/json;charset=utf-8' }), filename);
 }
 
-export function exportExcelWorkbook(state: AppState, filename: string): void {
-  const rows = state.shafts.map((s) => {
+export function exportSavedFileJson(file: SavedProgressFile, filename: string): void {
+  const json = JSON.stringify(file, null, 2);
+  triggerDownload(new Blob([json], { type: 'application/json;charset=utf-8' }), filename);
+}
+
+function buildWorkbookFromData(
+  shafts: ShaftRecord[],
+  pumpStation: PumpStationData,
+  reportDate: string,
+  compareInfo?: {
+    mode: 'weekly' | 'monthly';
+    file1Label: string;
+    file2Label: string;
+    baselineShafts: Record<string, { layerFlags: boolean[]; tunnelPct: number; castingPct: number; precastPct: number; bottomSlabDone: boolean }>;
+  }
+) {
+  const rows = shafts.map((s) => {
     const shDone = getShaftCompletedLayersCount(s);
     const shDur = calcDurationDays(s.shaftSDate, s.shaftEDate);
     const mhDur = calcDurationDays(s.manholeSDate, s.manholeEDate);
     const mtDur = calcDurationDays(s.tunnelSDate, s.tunnelEDate);
-    const wb = state.weeklyBaseline.shafts[s.id];
-    const mb = state.monthlyBaseline.shafts[s.id];
-    const prevWkLayers = wb ? (wb.layerFlags || []).slice(0, s.totalLayers).filter(Boolean).length : 0;
-    const prevMoLayers = mb ? (mb.layerFlags || []).slice(0, s.totalLayers).filter(Boolean).length : 0;
+    const prevSnap = compareInfo?.baselineShafts[s.id];
+    const prevLayers = prevSnap
+      ? (prevSnap.layerFlags || []).slice(0, s.totalLayers).filter(Boolean).length
+      : 0;
 
     return {
       'No.': s.index,
@@ -153,19 +170,41 @@ export function exportExcelWorkbook(state: AppState, filename: string): void {
       'Tunnel E.Date (DD/MM/YYYY)': formatDateDisplay(s.tunnelEDate),
       'Tunnel Duration (Days)': mtDur ?? (getTunnelStatus(s) === 'ongoing' ? 'On-going' : ''),
       'Tunnel Status': getTunnelStatus(s).toUpperCase(),
-      'Prev Week Layers': prevWkLayers,
-      'Prev Week Tunnel (%)': wb ? wb.tunnelPct : 0,
-      'Prev Month Layers': prevMoLayers,
-      'Prev Month Tunnel (%)': mb ? mb.tunnelPct : 0,
+      ...(compareInfo
+        ? {
+            'File 1 Layers': prevLayers,
+            'Added Layers': Math.max(0, shDone - prevLayers),
+            'File 1 Tunnel (%)': prevSnap ? prevSnap.tunnelPct : 0,
+            'Added Tunnel (%)': Math.max(0, s.tunnelPct - (prevSnap?.tunnelPct ?? 0)),
+          }
+        : {}),
     };
   });
 
-  const activeBaseline =
-    state.viewMode === 'monthly' ? state.monthlyBaseline : state.weeklyBaseline;
-  const summary = computeSummary(state.shafts, activeBaseline);
+  const summary = computeSummary(
+    shafts,
+    compareInfo
+      ? {
+          label: compareInfo.file1Label,
+          date: reportDate,
+          capturedAt: '',
+          shafts: compareInfo.baselineShafts,
+          pumpLayersDone: pumpStation.layers.map((l) => l.status === 'complete'),
+          pumpMachineRoomStatus: pumpStation.machineRoom.status,
+        }
+      : undefined
+  );
 
   const summaryRows = [
-    { Category: 'Report Date', Metric: 'Date', Value: formatDateDisplay(state.settings.reportDate), Unit: '' },
+    { Category: 'Report Date', Metric: 'Date', Value: formatDateDisplay(reportDate), Unit: '' },
+    ...(compareInfo
+      ? [
+          { Category: 'Comparison', Metric: 'File 1 (Previous)', Value: compareInfo.file1Label, Unit: '' },
+          { Category: 'Comparison', Metric: 'File 2 (Current/Final)', Value: compareInfo.file2Label, Unit: '' },
+          { Category: 'Delta', Metric: 'Added Shaft Layers', Value: summary.delta.addedLayers, Unit: 'Layers' },
+          { Category: 'Delta', Metric: 'Added Tunnel Length', Value: Number(summary.delta.addedTunnelM.toFixed(2)), Unit: 'm' },
+        ]
+      : []),
     { Category: 'Shafts', Metric: 'Total Shafts', Value: summary.totalShafts, Unit: 'Nos' },
     { Category: 'Shafts', Metric: 'Completed Shafts', Value: summary.completedShafts, Unit: 'Nos' },
     { Category: 'Shafts', Metric: 'On-going Shafts', Value: summary.ongoingShafts, Unit: 'Nos' },
@@ -174,20 +213,74 @@ export function exportExcelWorkbook(state: AppState, filename: string): void {
     { Category: 'Manholes', Metric: 'Completed Manholes (Both Parts)', Value: summary.completedManholes, Unit: 'Nos' },
     { Category: 'Manholes', Metric: 'Casting Completed', Value: summary.castingCompleteCount, Unit: 'Nos' },
     { Category: 'Manholes', Metric: 'Precast Ring Completed', Value: summary.precastCompleteCount, Unit: 'Nos' },
-    { Category: 'Manholes', Metric: 'On-going Manholes', Value: summary.ongoingManholes, Unit: 'Nos' },
     { Category: 'Micro-Tunnelling', Metric: 'Total Length', Value: Number((summary.totalTunnelLengthM / 1000).toFixed(3)), Unit: 'km' },
     { Category: 'Micro-Tunnelling', Metric: 'Completed Length', Value: Number((summary.completedTunnelLengthM / 1000).toFixed(3)), Unit: 'km' },
-    { Category: 'Micro-Tunnelling', Metric: 'DN 900 Total / Completed', Value: `${(summary.byDia.DN900.totalM / 1000).toFixed(3)} / ${(summary.byDia.DN900.completedM / 1000).toFixed(3)}`, Unit: 'km' },
-    { Category: 'Micro-Tunnelling', Metric: 'DN 1100 Total / Completed', Value: `${(summary.byDia.DN1100.totalM / 1000).toFixed(3)} / ${(summary.byDia.DN1100.completedM / 1000).toFixed(3)}`, Unit: 'km' },
-    { Category: 'Micro-Tunnelling', Metric: 'DN 1600 Total / Completed', Value: `${(summary.byDia.DN1600.totalM / 1000).toFixed(3)} / ${(summary.byDia.DN1600.completedM / 1000).toFixed(3)}`, Unit: 'km' },
+    { Category: 'Pump Station', Metric: 'Lower Main Structure', Value: `${getPumpLowerStatus(pumpStation).toUpperCase()} (${pumpStation.layers.filter((l) => l.status === 'complete').length}/5 layers)`, Unit: '' },
+    { Category: 'Pump Station', Metric: 'Upper Machine Room', Value: pumpStation.machineRoom.status.toUpperCase(), Unit: '' },
+  ];
+
+  const pumpRows = [
+    {
+      Part: 'Upper Part — Machine Room',
+      Item: 'Machine Room (Control / Storage / Pump House)',
+      Status: pumpStation.machineRoom.status.toUpperCase(),
+      'S. Date': formatDateDisplay(pumpStation.machineRoom.sDate),
+      'E. Date': formatDateDisplay(pumpStation.machineRoom.eDate),
+      'Duration (Days)': calcDurationDays(pumpStation.machineRoom.sDate, pumpStation.machineRoom.eDate) ?? '-',
+      'Total Height (m)': '',
+      'Casting Complete (m)': '',
+      'Sinking Complete (m)': '',
+    },
+    ...pumpStation.layers.map((ly, idx) => ({
+      Part: 'Lower Part — Main Structure',
+      Item: ly.name,
+      Status: ly.status.toUpperCase(),
+      'S. Date': formatDateDisplay(ly.sDate),
+      'E. Date': formatDateDisplay(ly.eDate),
+      'Duration (Days)': calcDurationDays(ly.sDate, ly.eDate) ?? '-',
+      'Total Height (m)': idx === 0 ? pumpStation.totalHeightM : '',
+      'Casting Complete (m)': idx === 0 ? pumpStation.castingCompleteM : '',
+      'Sinking Complete (m)': idx === 0 ? pumpStation.sinkingCompletedM : '',
+    })),
   ];
 
   const wb = XLSX.utils.book_new();
-  const wsShafts = XLSX.utils.json_to_sheet(rows);
-  const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
-  XLSX.utils.book_append_sheet(wb, wsShafts, 'WA_Shafts_Progress');
-  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'WA_Shafts_Progress');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pumpRows), 'Pump_Station_2Part');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+  return wb;
+}
 
+export function exportSavedFileExcel(
+  file: SavedProgressFile,
+  _settings: SheetSettings,
+  filename: string
+): void {
+  const wb = buildWorkbookFromData(file.shafts, file.pumpStation, file.date);
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  triggerDownload(
+    new Blob([out], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    filename
+  );
+}
+
+export function exportExcelWorkbook(state: AppState, filename: string): void {
+  const ctx = resolveDisplayContext(state);
+  const wb = buildWorkbookFromData(
+    ctx.displayShafts,
+    ctx.displayPump,
+    state.settings.reportDate,
+    state.viewMode === 'overall'
+      ? undefined
+      : {
+          mode: state.viewMode,
+          file1Label: ctx.file1Label,
+          file2Label: ctx.file2Label,
+          baselineShafts: ctx.baseline.shafts,
+        }
+  );
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   triggerDownload(
     new Blob([out], {
@@ -336,12 +429,13 @@ export function exportAutoCadDxf(state: AppState, filename: string): void {
   dxfRect('BORDER_TITLE', 8, 8, 825, 578);
   dxfText('BORDER_TITLE', 14, 18, 4.5, `${state.settings.sectionTitle} [${state.viewMode.toUpperCase()}]`);
 
+  const ctx = resolveDisplayContext(state);
   const cols = state.settings.layoutMode === '12col' ? 12 : 10;
   const colW = 815 / cols;
   const rowH = 115;
-  const baseline = state.viewMode === 'monthly' ? state.monthlyBaseline : state.weeklyBaseline;
+  const baseline = ctx.baseline;
 
-  state.shafts.forEach((s, idx) => {
+  ctx.displayShafts.forEach((s, idx) => {
     const col = idx % cols;
     const row = Math.floor(idx / cols);
     const x0 = 13 + col * colW;
@@ -401,13 +495,13 @@ export function exportAutoCadDxf(state: AppState, filename: string): void {
     dxfText('TEXT_TABLES', tx + 2, ty + 8.5, 1.7, `${s.pipeDia}: ${s.tunnelLengthM}m (${s.tunnelPct}%)`);
   });
 
-  const summary = computeSummary(state.shafts, baseline);
+  const summary = computeSummary(ctx.displayShafts, baseline);
   dxfText(
     'BORDER_TITLE',
     14,
     540,
     3,
-    `SUMMARY: Shafts ${summary.completedShafts}/${summary.totalShafts} Complete (${summary.ongoingShafts} On-going) | Manholes ${summary.completedManholes}/${summary.totalManholes} | Tunnel ${(summary.completedTunnelLengthM / 1000).toFixed(3)} / ${(summary.totalTunnelLengthM / 1000).toFixed(3)} km`
+    `SUMMARY: Shafts ${summary.completedShafts}/${summary.totalShafts} Complete (${summary.ongoingShafts} On-going) | Manholes ${summary.completedManholes}/${summary.totalManholes} | Tunnel ${(summary.completedTunnelLengthM / 1000).toFixed(3)} / ${(summary.totalTunnelLengthM / 1000).toFixed(3)} km | Pump Lower: ${getPumpLowerStatus(ctx.displayPump).toUpperCase()} | Machine Room: ${ctx.displayPump.machineRoom.status.toUpperCase()}`
   );
 
   push(0, 'ENDSEC', 0, 'EOF');

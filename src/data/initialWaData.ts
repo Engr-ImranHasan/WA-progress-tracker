@@ -1,5 +1,12 @@
-import { AppState, ColorPalette, PumpStationData, ShaftRecord, SheetSettings } from '../types';
-import { createSnapshotFromState } from '../utils/calculations';
+import {
+  AppState,
+  ColorPalette,
+  PumpStationData,
+  SavedProgressFile,
+  ShaftRecord,
+  SheetSettings,
+} from '../types';
+import { createSnapshotFromState, LIVE_WORKSPACE_ID } from '../utils/calculations';
 
 export const DEFAULT_COLORS: ColorPalette = {
   overallShaft: '#16c916',
@@ -20,30 +27,35 @@ export const DEFAULT_COLORS: ColorPalette = {
 };
 
 export const DEFAULT_SETTINGS: SheetSettings = {
-  projectTitle: 'MICRO-TUNNELLING DRAINAGE / SEWERAGE PROJECT',
-  sectionTitle: 'WA SECTION — PROGRESS REPORT (SHAFT, MANHOLE & MICRO-TUNNELLING)',
+  projectTitle: 'RECONSTRUCTION OF EASTERN TRUNK MAIN (PACKAGE No. WD2)',
+  sectionTitle: 'WA SECTION — PROGRESS REPORT (SHAFT, MANHOLE, MICRO-TUNNELLING & PUMP STATION)',
   drawingNo: 'WA-PRG-A1-001',
   revision: 'Rev-01',
   reportDate: '2026-11-15',
   preparedBy: 'Site Engineering Team',
   checkedBy: 'Project Manager',
-  clientName: 'Project Authority',
-  contractorName: 'Construction JV',
+  clientName: 'DWASA',
+  contractorName: 'CCECC-SafBon-SMEDI JV',
   layoutMode: '10col',
   showPumpStation: true,
 };
 
 export const INITIAL_PUMP_STATION: PumpStationData = {
   totalHeightM: 19.95,
-  completedHeightM: 19.95,
+  castingCompleteM: 19.95,
   sinkingCompletedM: 13.8,
   layers: [
-    { name: '1st Layer', sDate: '2025-11-25', eDate: '2026-02-08', done: true },
-    { name: '2nd Layer', sDate: '2026-02-12', eDate: '2026-04-29', done: true },
-    { name: '3rd Layer', sDate: '2026-05-02', eDate: '2026-07-05', done: true },
-    { name: '4th Layer', sDate: '2026-07-06', eDate: '2026-08-29', done: true },
-    { name: '5th Layer', sDate: '2026-08-30', eDate: '2026-10-07', done: true },
+    { name: '1st Layer', sDate: '2025-11-25', eDate: '2026-02-08', status: 'complete' },
+    { name: '2nd Layer', sDate: '2026-02-12', eDate: '2026-04-29', status: 'complete' },
+    { name: '3rd Layer', sDate: '2026-05-02', eDate: '2026-07-05', status: 'complete' },
+    { name: '4th Layer', sDate: '2026-07-06', eDate: '2026-08-29', status: 'complete' },
+    { name: '5th Layer', sDate: '2026-08-30', eDate: '2026-10-07', status: 'complete' },
   ],
+  machineRoom: {
+    status: 'remaining',
+    sDate: '',
+    eDate: '',
+  },
 };
 
 export const INITIAL_SHAFTS: ShaftRecord[] = [
@@ -1329,22 +1341,35 @@ export const INITIAL_SHAFTS: ShaftRecord[] = [
 ];
 
 export function createInitialAppState(): AppState {
-  const pumpDone = INITIAL_PUMP_STATION.layers.map((l) => l.done);
+  const pumpDone = INITIAL_PUMP_STATION.layers.map((l) => l.status === 'complete');
   const weeklyBaseline = createSnapshotFromState(
     INITIAL_SHAFTS,
     pumpDone,
-    'Baseline Week (PDF Import)',
-    '2026-11-08'
+    'Baseline PDF (08/11/2026)',
+    '2026-11-08',
+    INITIAL_PUMP_STATION.machineRoom.status
   );
   const monthlyBaseline = createSnapshotFromState(
     INITIAL_SHAFTS,
     pumpDone,
-    'Last Monthly Meeting (PDF Import)',
-    '2026-10-31'
+    'Last Monthly Meeting (31/10/2026)',
+    '2026-10-31',
+    INITIAL_PUMP_STATION.machineRoom.status
   );
 
+  const initialSavedFile: SavedProgressFile = {
+    id: 'file-initial-baseline',
+    name: 'Baseline PDF Report (Initial)',
+    date: '2026-11-08',
+    note: 'Extracted from initial A0 WABC PDF',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    shafts: JSON.parse(JSON.stringify(INITIAL_SHAFTS)),
+    pumpStation: JSON.parse(JSON.stringify(INITIAL_PUMP_STATION)),
+  };
+
   return {
-    version: 1,
+    version: 2,
     lastSavedAt: new Date().toISOString(),
     viewMode: 'overall',
     uiLang: 'bn',
@@ -1352,6 +1377,16 @@ export function createInitialAppState(): AppState {
     currentMonthLabel: 'Current Month (Nov 2026)',
     shafts: JSON.parse(JSON.stringify(INITIAL_SHAFTS)),
     pumpStation: JSON.parse(JSON.stringify(INITIAL_PUMP_STATION)),
+    savedFiles: [initialSavedFile],
+    activeLoadedFileId: null,
+    weeklyCompare: {
+      file1Id: initialSavedFile.id,
+      file2Id: LIVE_WORKSPACE_ID,
+    },
+    monthlyCompare: {
+      file1Id: initialSavedFile.id,
+      file2Id: LIVE_WORKSPACE_ID,
+    },
     weeklyBaseline,
     monthlyBaseline,
     history: [],

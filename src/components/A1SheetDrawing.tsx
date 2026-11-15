@@ -10,9 +10,11 @@ import {
   computeSummary,
   formatDateDisplay,
   getManholeStatus,
+  getPumpLowerStatus,
   getShaftCompletedLayersCount,
   getShaftStatus,
   getTunnelStatus,
+  resolveDisplayContext,
 } from '../utils/calculations';
 
 interface A1SheetDrawingProps {
@@ -35,9 +37,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
   onSelectShaft,
   svgRef,
 }) => {
-  const { shafts, pumpStation, viewMode, colors, settings } = state;
-  const baseline =
-    viewMode === 'monthly' ? state.monthlyBaseline : state.weeklyBaseline;
+  const { viewMode, colors, settings } = state;
+  const { displayShafts: shafts, displayPump: pumpStation, baseline, file1Label, file2Label } =
+    resolveDisplayContext(state);
   const summary = computeSummary(shafts, baseline);
 
   const cols = settings.layoutMode === '12col' ? 12 : 10;
@@ -50,9 +52,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
 
   const activePeriodLabel =
     viewMode === 'weekly'
-      ? `WEEKLY PROGRESS: ${state.currentWeekLabel}  (vs ${state.weeklyBaseline.label})`
+      ? `WEEKLY COMPARISON: ${file1Label}  -->  ${file2Label}`
       : viewMode === 'monthly'
-      ? `MONTHLY PROGRESS: ${state.currentMonthLabel}  (vs ${state.monthlyBaseline.label})`
+      ? `MONTHLY COMPARISON: ${file1Label}  -->  ${file2Label}`
       : 'OVERALL CONSTRUCTION STATUS';
 
   const currHighlight =
@@ -316,165 +318,590 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     );
   };
 
-  // Render Pump Station block
+  // Render 2-Part Golapbag SPS Pump Station (Lower 5-Layer Main Caisson + Upper Machine Room)
   const renderPumpStation = (
     ps: PumpStationData,
     x: number,
     y: number,
     w: number
   ) => {
-    const structX = x + 10;
-    const structY = y + 36;
-    const structW = Math.min(210, w * 0.46);
-    const structH = 152;
-    const tblX = structX + structW + 14;
-    const tblW = Math.max(110, x + w - tblX - 8);
+    const isPumpSelected = selectedShaftId === 'PUMP_STATION';
+    const structX = x + 16;
+    const structW = Math.min(182, w * 0.45);
+
+    // Vertical geometry inside Row 4 (total row height = 232)
+    // Upper Part: Machine Room (+7.000 to +19.500 PWD)
+    const mrTopY = y + 20;
+    const mrH = 58;
+    const groundY = mrTopY + mrH; // +7.000 PWD / Road Level
+
+    // Lower Part: Main Pump Station Structure (-13.000 to +6.550 PWD, 5 Layers)
+    const subTopY = groundY;
+    const subH = 114; // ends at y + 192
+    const shoeH = 16;
+    const bodyH = subH - shoeH; // 98 -> 19.6 per layer across 5 layers
+    const layerH = bodyH / Math.max(1, ps.layers.length);
+
+    const tblX = structX + structW + 10;
+    const tblW = Math.max(122, x + w - tblX - 4);
+
+    // Status color resolver for Pump Station elements
+    const resolvePumpFill = (
+      status: 'remaining' | 'ongoing' | 'complete',
+      prevDone: boolean
+    ): { fill: string; stroke: string; badgeBg: string; badgeText: string } => {
+      if (status === 'complete') {
+        const fill =
+          viewMode === 'overall'
+            ? colors.overallShaft
+            : prevDone
+            ? viewMode === 'weekly'
+              ? colors.prevWeekShaft
+              : colors.prevMonthShaft
+            : currHighlight;
+        return {
+          fill,
+          stroke: '#14532d',
+          badgeBg: '#dcfce7',
+          badgeText: '#15803d',
+        };
+      }
+      if (status === 'ongoing') {
+        return {
+          fill: '#fbbf24',
+          stroke: '#b45309',
+          badgeBg: '#fef3c7',
+          badgeText: '#b45309',
+        };
+      }
+      return {
+        fill: '#ffffff',
+        stroke: colors.remainingOutline,
+        badgeBg: '#fef2f2',
+        badgeText: '#dc2626',
+      };
+    };
+
+    const mrVisual = resolvePumpFill(
+      ps.machineRoom.status,
+      baseline.pumpMachineRoomStatus === 'complete'
+    );
+    const lowerStatus = getPumpLowerStatus(ps);
+    const mrDur = calcDurationDays(ps.machineRoom.sDate, ps.machineRoom.eDate);
+
+    // Machine Room Level 2 (Control Room + Food & Tea, top 24u) & Level 1 (Storage + Pump House, lower 34u)
+    const lvl2H = 24;
+    const lvl1Y = mrTopY + lvl2H;
+    const lvl1H = mrH - lvl2H;
+    const midX = structX + structW * 0.52;
+    const leftAnnexW = 14;
 
     return (
-      <g>
+      <g
+        style={{ cursor: 'pointer' }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectShaft('PUMP_STATION', 'shaft');
+        }}
+      >
+        {/* Selection highlight */}
+        {isPumpSelected && (
+          <rect
+            data-selection-ring="true"
+            x={x + 1}
+            y={y + 1}
+            width={w - 3}
+            height={224}
+            rx={4}
+            fill="#eff6ff"
+            fillOpacity={0.35}
+            stroke="#2563eb"
+            strokeWidth={1.6}
+            strokeDasharray="4,2"
+          />
+        )}
+
+        {/* Title */}
         <text
-          x={x + w * 0.35}
-          y={y + 18}
+          x={x + w * 0.48}
+          y={y + 12}
           textAnchor="middle"
-          fontSize={10.5}
+          fontSize={9.2}
           fontWeight="700"
           fill="#0f172a"
         >
-          Pump Station - Section Layout (A-A)
-        </text>
-        <rect
-          x={structX}
-          y={structY}
-          width={structW}
-          height={structH}
-          fill="#f8fafc"
-          stroke="#16a34a"
-          strokeWidth={1.2}
-        />
-        <rect
-          x={structX}
-          y={structY}
-          width={14}
-          height={structH}
-          fill={colors.overallShaft}
-          stroke="#15803d"
-          strokeWidth={0.6}
-        />
-        <rect
-          x={structX + structW - 14}
-          y={structY}
-          width={14}
-          height={structH}
-          fill={colors.overallShaft}
-          stroke="#15803d"
-          strokeWidth={0.6}
-        />
-        <rect
-          x={structX + structW / 2 - 5}
-          y={structY}
-          width={10}
-          height={structH}
-          fill={colors.overallShaft}
-          stroke="#15803d"
-          strokeWidth={0.6}
-        />
-        <rect x={structX} y={structY} width={structW} height={7} fill={colors.overallShaft} />
-        <rect x={structX} y={structY + 42} width={structW} height={9} fill={colors.overallShaft} />
-        <rect x={structX} y={structY + 92} width={structW} height={9} fill={colors.overallShaft} />
-        <rect
-          x={structX + 14}
-          y={structY + structH - 22}
-          width={structW - 28}
-          height={22}
-          fill="#fee2e2"
-          stroke="#dc2626"
-          strokeWidth={0.8}
-        />
-        <text
-          x={structX + structW / 2}
-          y={structY + structH - 8}
-          textAnchor="middle"
-          fontSize={5.2}
-          fill="#991b1b"
-          fontWeight="700"
-        >
-          BASE PLUG / TREMIE SLAB (H: {ps.totalHeightM}m | Sinking: {ps.sinkingCompletedM}m)
-        </text>
-        <text
-          x={structX + structW / 2}
-          y={structY + structH + 11}
-          textAnchor="middle"
-          fontSize={6.1}
-          fontWeight="600"
-          fill="#1e3a8a"
-        >
-          Section Layout (A-A) - Completed Height: {ps.completedHeightM}m / {ps.totalHeightM}m
+          Pump Station (Golapbag SPS - Sec 1-1)
         </text>
 
+        {/* ================= UPPER PART: MACHINE ROOM ================= */}
+        {/* Side entrance canopy on left (Sec 1-1) */}
+        <polygon
+          points={`${structX - leftAnnexW},${groundY - 17} ${structX},${groundY - 22} ${structX},${groundY} ${structX - leftAnnexW},${groundY}`}
+          fill={mrVisual.fill}
+          fillOpacity={ps.machineRoom.status === 'remaining' ? 1 : 0.78}
+          stroke={mrVisual.stroke}
+          strokeWidth={0.75}
+        />
+
+        {/* Level 2: Control Room + Food & Tea (+14.400 to +19.500) */}
+        <rect
+          x={structX + 8}
+          y={mrTopY}
+          width={structW - 8}
+          height={lvl2H}
+          fill={mrVisual.fill}
+          fillOpacity={ps.machineRoom.status === 'remaining' ? 1 : 0.85}
+          stroke={mrVisual.stroke}
+          strokeWidth={0.9}
+        />
+        {/* Parapet roof cap */}
+        <rect
+          x={structX + 6}
+          y={mrTopY - 2.5}
+          width={structW - 4}
+          height={3.2}
+          fill={ps.machineRoom.status === 'remaining' ? '#e2e8f0' : mrVisual.stroke}
+          stroke={mrVisual.stroke}
+          strokeWidth={0.55}
+        />
+
+        {/* Level 1: Storage Room & Pump House (+7.000 to +14.400) */}
+        <rect
+          x={structX}
+          y={lvl1Y}
+          width={structW}
+          height={lvl1H}
+          fill={mrVisual.fill}
+          fillOpacity={ps.machineRoom.status === 'remaining' ? 1 : 0.88}
+          stroke={mrVisual.stroke}
+          strokeWidth={0.95}
+        />
+
+        {/* Interior architectural room partitions (Grid 2 dividing wall + floor slab) */}
+        <line
+          x1={midX}
+          y1={mrTopY}
+          x2={midX}
+          y2={groundY}
+          stroke={mrVisual.stroke}
+          strokeWidth={0.7}
+        />
+        <line
+          x1={structX + 8}
+          y1={lvl1Y}
+          x2={midX}
+          y2={lvl1Y}
+          stroke={mrVisual.stroke}
+          strokeWidth={0.8}
+        />
+        {/* Tiny window silhouettes */}
+        {[structX + 20, structX + 42, midX + 14, midX + 38, midX + 60].map((wx, wi) => (
+          <rect
+            key={wi}
+            x={wx}
+            y={mrTopY + 6}
+            width={11}
+            height={9}
+            fill="#ffffff"
+            fillOpacity={0.75}
+            stroke={mrVisual.stroke}
+            strokeWidth={0.45}
+          />
+        ))}
+        {/* Crane / Pump House high-bay beam & room tags */}
+        <text
+          x={structX + 8 + (midX - structX - 8) / 2}
+          y={mrTopY + 21}
+          textAnchor="middle"
+          fontSize={3.9}
+          fontWeight="700"
+          fill="#0f172a"
+        >
+          Control
+        </text>
+        <text
+          x={midX + (structX + structW - midX) / 2}
+          y={mrTopY + 21}
+          textAnchor="middle"
+          fontSize={3.9}
+          fontWeight="700"
+          fill="#0f172a"
+        >
+          Food/Tea
+        </text>
+        <text
+          x={structX + (midX - structX) / 2}
+          y={lvl1Y + 13}
+          textAnchor="middle"
+          fontSize={4.2}
+          fontWeight="700"
+          fill="#0f172a"
+        >
+          Storage
+        </text>
+        <text
+          x={midX + (structX + structW - midX) / 2}
+          y={lvl1Y + 13}
+          textAnchor="middle"
+          fontSize={4.2}
+          fontWeight="700"
+          fill="#0f172a"
+        >
+          Pump House
+        </text>
+
+        {/* Machine Room Center Status Badge */}
+        <rect
+          x={structX + structW * 0.16}
+          y={lvl1Y + 18}
+          width={structW * 0.68}
+          height={12}
+          rx={2}
+          fill="#ffffff"
+          fillOpacity={0.92}
+          stroke={mrVisual.stroke}
+          strokeWidth={0.6}
+        />
+        <text
+          x={structX + structW * 0.5}
+          y={lvl1Y + 26.2}
+          textAnchor="middle"
+          fontSize={4.6}
+          fontWeight="700"
+          fill={mrVisual.badgeText}
+        >
+          MACHINE ROOM: {ps.machineRoom.status.toUpperCase()}
+        </text>
+
+        {/* Ground / Road Slab Datum Line (+7.000 PWD) */}
+        <line
+          x1={structX - leftAnnexW - 4}
+          y1={groundY}
+          x2={structX + structW + 6}
+          y2={groundY}
+          stroke="#1e293b"
+          strokeWidth={1.1}
+        />
+        <text
+          x={structX - leftAnnexW - 3}
+          y={groundY + 6.5}
+          fontSize={3.8}
+          fontWeight="700"
+          fill="#475569"
+        >
+          +7.0m
+        </text>
+
+        {/* ================= LOWER PART: MAIN PUMP STRUCTURE (5 LAYERS) ================= */}
+        {/* Background shaft interior */}
+        <rect
+          x={structX}
+          y={subTopY}
+          width={structW}
+          height={bodyH}
+          fill="#f8fafc"
+          stroke="#64748b"
+          strokeWidth={0.5}
+        />
+
+        {/* Render each of 5 horizontal construction layers */}
+        {ps.layers.map((ly, li) => {
+          const lyY = subTopY + li * layerH;
+          const prevDone = Boolean(baseline.pumpLayersDone?.[li]);
+          const vis = resolvePumpFill(ly.status, prevDone);
+          const wallW = 12;
+          const innerMidX = structX + structW / 2 - 4.5;
+          const partWallX = structX + structW * 0.27;
+
+          return (
+            <g key={ly.name}>
+              {/* Layer light band fill */}
+              <rect
+                x={structX + wallW}
+                y={lyY}
+                width={structW - wallW * 2}
+                height={layerH}
+                fill={vis.fill}
+                fillOpacity={ly.status === 'remaining' ? 0.15 : 0.2}
+              />
+              {/* Left Caisson Wall (Grid 1) */}
+              <rect
+                x={structX}
+                y={lyY}
+                width={wallW}
+                height={layerH - 0.5}
+                fill={vis.fill}
+                stroke={vis.stroke}
+                strokeWidth={0.65}
+              />
+              {/* Right Caisson Wall (Grid 3) */}
+              <rect
+                x={structX + structW - wallW}
+                y={lyY}
+                width={wallW}
+                height={layerH - 0.5}
+                fill={vis.fill}
+                stroke={vis.stroke}
+                strokeWidth={0.65}
+              />
+              {/* Central Dividing Wall (Grid 2) */}
+              <rect
+                x={innerMidX}
+                y={lyY}
+                width={9}
+                height={layerH - 0.5}
+                fill={vis.fill}
+                stroke={vis.stroke}
+                strokeWidth={0.55}
+              />
+              {/* Intermediate inner partition/slab at layers 1, 3, 5 */}
+              {(li === 0 || li === 2 || li === 4) && (
+                <rect
+                  x={structX + wallW}
+                  y={lyY + layerH - 4.5}
+                  width={structW - wallW * 2}
+                  height={4.2}
+                  fill={vis.fill}
+                  stroke={vis.stroke}
+                  strokeWidth={0.5}
+                />
+              )}
+              {li >= 2 && (
+                <rect
+                  x={partWallX}
+                  y={lyY}
+                  width={5}
+                  height={layerH - 0.5}
+                  fill={vis.fill}
+                  stroke={vis.stroke}
+                  strokeWidth={0.45}
+                />
+              )}
+              {/* Layer dashed separation & L1..L5 label */}
+              <line
+                x1={structX}
+                y1={lyY + layerH}
+                x2={structX + structW}
+                y2={lyY + layerH}
+                stroke="#475569"
+                strokeWidth={0.4}
+                strokeDasharray="2,1.5"
+              />
+              <text
+                x={structX - 2.5}
+                y={lyY + layerH * 0.68}
+                textAnchor="end"
+                fontSize={4.4}
+                fontWeight="700"
+                fill={vis.badgeText}
+              >
+                L{li + 1}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Cutting Shoe & Base Plug / Tremie Slab (-13.000 to -9.300 PWD) */}
+        {(() => {
+          const shoeY = subTopY + bodyH;
+          const shoeVis = resolvePumpFill(
+            ps.layers[4]?.status ?? 'remaining',
+            Boolean(baseline.pumpLayersDone?.[4])
+          );
+          return (
+            <g>
+              {/* Left cutting shoe bevel */}
+              <polygon
+                points={`${structX},${shoeY} ${structX + 18},${shoeY} ${structX + 10},${shoeY + shoeH} ${structX},${shoeY + shoeH}`}
+                fill={shoeVis.fill}
+                stroke={shoeVis.stroke}
+                strokeWidth={0.7}
+              />
+              {/* Right cutting shoe bevel */}
+              <polygon
+                points={`${structX + structW - 18},${shoeY} ${structX + structW},${shoeY} ${structX + structW},${shoeY + shoeH} ${structX + structW - 10},${shoeY + shoeH}`}
+                fill={shoeVis.fill}
+                stroke={shoeVis.stroke}
+                strokeWidth={0.7}
+              />
+              {/* Bottom tremie plug slab */}
+              <rect
+                x={structX + 10}
+                y={shoeY + 3}
+                width={structW - 20}
+                height={shoeH - 3}
+                fill={lowerStatus === 'complete' ? '#dcfce7' : '#fee2e2'}
+                stroke={lowerStatus === 'complete' ? '#15803d' : '#dc2626'}
+                strokeWidth={0.7}
+              />
+              <text
+                x={structX + structW / 2}
+                y={shoeY + 12.2}
+                textAnchor="middle"
+                fontSize={4.6}
+                fontWeight="700"
+                fill={lowerStatus === 'complete' ? '#166534' : '#991b1b'}
+              >
+                BASE PLUG / CUTTING SHOE (-13.0m)
+              </text>
+            </g>
+          );
+        })()}
+
+        {/* Lower Structural Summary Captions */}
+        <text
+          x={structX + structW / 2}
+          y={subTopY + subH + 10.5}
+          textAnchor="middle"
+          fontSize={5.4}
+          fontWeight="700"
+          fill="#1e3a8a"
+        >
+          Total H: {ps.totalHeightM}m | Casting: {ps.castingCompleteM}m
+        </text>
+        <text
+          x={structX + structW / 2}
+          y={subTopY + subH + 19}
+          textAnchor="middle"
+          fontSize={5.4}
+          fontWeight="700"
+          fill="#0f766e"
+        >
+          Sinking Complete: {ps.sinkingCompletedM}m
+        </text>
+
+        {/* ================= RIGHT SIDE 2-PART STATUS TABLE ================= */}
         <g>
+          {/* PART 1: UPPER MACHINE ROOM */}
+          <rect
+            x={tblX}
+            y={y + 20}
+            width={tblW}
+            height={34}
+            fill="#ffffff"
+            stroke="#1e3a8a"
+            strokeWidth={0.75}
+          />
+          <rect
+            x={tblX}
+            y={y + 20}
+            width={tblW}
+            height={12}
+            fill="#eff6ff"
+            stroke="#1e3a8a"
+            strokeWidth={0.6}
+          />
+          <text x={tblX + 4} y={y + 28.5} fontSize={4.8} fontWeight="700" fill="#1e3a8a">
+            UPPER: MACHINE ROOM
+          </text>
+          <rect
+            x={tblX + tblW - 46}
+            y={y + 21.5}
+            width={43}
+            height={9}
+            rx={1.5}
+            fill={mrVisual.badgeBg}
+            stroke={mrVisual.badgeText}
+            strokeWidth={0.45}
+          />
+          <text
+            x={tblX + tblW - 24.5}
+            y={y + 27.8}
+            textAnchor="middle"
+            fontSize={4.3}
+            fontWeight="700"
+            fill={mrVisual.badgeText}
+          >
+            {ps.machineRoom.status.toUpperCase()}
+          </text>
+          <text x={tblX + 4} y={y + 41} fontSize={4.8} fill="#334155">
+            S: {formatDateDisplay(ps.machineRoom.sDate)}   |   E: {ps.machineRoom.eDate ? formatDateDisplay(ps.machineRoom.eDate) : ps.machineRoom.status === 'ongoing' ? 'On-going' : '-'}
+          </text>
+          <text x={tblX + 4} y={y + 50} fontSize={4.8} fontWeight="700" fill={mrVisual.badgeText}>
+            Duration: {mrDur !== null ? `${mrDur} Days` : ps.machineRoom.status === 'ongoing' ? 'On-going' : 'Remaining'}
+          </text>
+
+          {/* PART 2: LOWER MAIN PUMP STATION (5 LAYERS) */}
           <text
             x={tblX + tblW / 2}
-            y={structY - 6}
+            y={y + 62}
             textAnchor="middle"
-            fontSize={7.2}
+            fontSize={5.2}
             fontWeight="700"
             fill="#1e3a8a"
           >
-            Pump Station Construction Status
+            LOWER: MAIN PUMP STRUCTURE (5 LAYERS)
           </text>
           <rect
             x={tblX}
-            y={structY}
+            y={y + 65}
             width={tblW}
-            height={ps.layers.length * 26}
+            height={120}
             fill="#ffffff"
             stroke="#1e3a8a"
-            strokeWidth={0.8}
+            strokeWidth={0.75}
           />
           {ps.layers.map((ly, li) => {
-            const lyY = structY + li * 26;
+            const rowY = y + 65 + li * 24;
             const dur = calcDurationDays(ly.sDate, ly.eDate);
+            const vis = resolvePumpFill(ly.status, Boolean(baseline.pumpLayersDone?.[li]));
             return (
               <g key={ly.name}>
-                <line
-                  x1={tblX}
-                  y1={lyY}
-                  x2={tblX + tblW}
-                  y2={lyY}
-                  stroke="#1e3a8a"
-                  strokeWidth={0.6}
-                />
+                {li > 0 && (
+                  <line
+                    x1={tblX}
+                    y1={rowY}
+                    x2={tblX + tblW}
+                    y2={rowY}
+                    stroke="#1e3a8a"
+                    strokeWidth={0.55}
+                  />
+                )}
                 <rect
                   x={tblX}
-                  y={lyY}
+                  y={rowY}
                   width={42}
-                  height={26}
-                  fill={ly.done ? '#dcfce7' : '#fef2f2'}
+                  height={24}
+                  fill={vis.badgeBg}
                   stroke="#1e3a8a"
                   strokeWidth={0.5}
                 />
                 <text
                   x={tblX + 21}
-                  y={lyY + 15}
+                  y={rowY + 14}
                   textAnchor="middle"
-                  fontSize={5.4}
+                  fontSize={5.0}
                   fontWeight="700"
-                  fill="#1e3a8a"
+                  fill={vis.badgeText}
                 >
                   {ly.name}
                 </text>
-                <text x={tblX + 47} y={lyY + 9} fontSize={5.0} fill="#334155">
-                  S: {formatDateDisplay(ly.sDate)}
+                <text x={tblX + 46} y={rowY + 9.5} fontSize={4.6} fill="#334155">
+                  S: {formatDateDisplay(ly.sDate)}  |  E: {ly.eDate ? formatDateDisplay(ly.eDate) : ly.status === 'ongoing' ? 'On-going' : '-'}
                 </text>
-                <text x={tblX + 47} y={lyY + 17} fontSize={5.0} fill="#334155">
-                  E: {formatDateDisplay(ly.eDate)}
-                </text>
-                <text x={tblX + 47} y={lyY + 24} fontSize={5.0} fontWeight="700" fill="#166534">
-                  Dur: {dur ?? '-'} Days
+                <text x={tblX + 46} y={rowY + 19} fontSize={4.6} fontWeight="700" fill={vis.badgeText}>
+                  Dur: {dur !== null ? `${dur} Days` : '-'}  ({ly.status.toUpperCase()})
                 </text>
               </g>
             );
           })}
+
+          {/* LOWER LENGTHS SUMMARY BOX */}
+          <rect
+            x={tblX}
+            y={y + 189}
+            width={tblW}
+            height={28}
+            fill="#f8fafc"
+            stroke="#1e3a8a"
+            strokeWidth={0.65}
+          />
+          <text x={tblX + 5} y={y + 200} fontSize={4.9} fontWeight="700" fill="#1e3a8a">
+            Total Height: {ps.totalHeightM}m  |  Casting: {ps.castingCompleteM}m
+          </text>
+          <text x={tblX + 5} y={y + 211} fontSize={4.9} fontWeight="700" fill="#0f766e">
+            Sinking Complete: {ps.sinkingCompletedM}m  (Click to Edit)
+          </text>
         </g>
       </g>
     );
@@ -1139,7 +1566,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 wallRightX + wallThick,
                 tunnelBarY,
                 settings.showPumpStation
-                  ? colW - (wallRightX + wallThick) + colW * 0.56 - 10
+                  ? settings.layoutMode === '12col'
+                    ? colW * 1.25 - (wallRightX + wallThick) + 4
+                    : colW - (wallRightX + wallThick) + colW * 0.56 + 4
                   : 96 * sx,
                 10,
                 100,
@@ -1211,11 +1640,24 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
         <text x={20} y={103} fontSize={7.6} fill="#dc2626">REMAINING SHAFT</text>
         <text x={252} y={103} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#dc2626">: {String(summary.remainingShafts).padStart(2, '0')} Nos</text>
 
-        {viewMode !== 'overall' && (
+        {viewMode === 'overall' ? (
+          <g>
+            <rect x={16} y={114} width={242} height={44} rx={3} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.7} />
+            <text x={24} y={128} fontSize={7} fontWeight="700" fill="#166534">
+              PUMP STATION (GOLAPBAG SPS):
+            </text>
+            <text x={24} y={140} fontSize={6.8} fill="#0f172a">
+              - Lower Main Structure: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Layers (Sink {pumpStation.sinkingCompletedM}m)
+            </text>
+            <text x={24} y={152} fontSize={6.8} fontWeight="700" fill="#1e3a8a">
+              - Upper Machine Room: {pumpStation.machineRoom.status.toUpperCase()}
+            </text>
+          </g>
+        ) : (
           <g>
             <rect x={16} y={114} width={242} height={44} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
             <text x={24} y={130} fontSize={7} fontWeight="700" fill="#92400e">
-              {viewMode === 'weekly' ? 'THIS WEEK ADDED:' : 'THIS MONTH ADDED:'}
+              {viewMode === 'weekly' ? 'WEEKLY DELTA (FILE 2 vs FILE 1):' : 'MONTHLY DELTA (FILE 2 vs FILE 1):'}
             </text>
             <text x={24} y={142} fontSize={7} fill="#78350f">
               - Shaft Layers Completed: +{summary.delta.addedLayers} layers
@@ -1336,19 +1778,19 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             {[
               {
                 c: viewMode === 'weekly' ? colors.prevWeekShaft : colors.prevMonthShaft,
-                label: viewMode === 'weekly' ? 'Shaft Done Up to Previous Week' : 'Shaft Done Up to Previous Meeting',
+                label: 'Shaft Done in File 1 (Previous)',
               },
               {
                 c: viewMode === 'weekly' ? colors.prevWeekManhole : colors.prevMonthManhole,
-                label: viewMode === 'weekly' ? 'Manhole Done Up to Previous Week' : 'Manhole Done Up to Previous Meeting',
+                label: 'Manhole Done in File 1 (Previous)',
               },
               {
                 c: viewMode === 'weekly' ? colors.prevWeekTunnel : colors.prevMonthTunnel,
-                label: viewMode === 'weekly' ? 'Tunnel Done Up to Previous Week' : 'Tunnel Done Up to Previous Meeting',
+                label: 'Tunnel Done in File 1 (Previous)',
               },
               {
                 c: currHighlight,
-                label: viewMode === 'weekly' ? 'NEW PROGRESS IN THIS WEEK' : 'NEW PROGRESS SINCE LAST MEETING (MONTH)',
+                label: viewMode === 'weekly' ? 'NEW WEEKLY PROGRESS (File 2 vs File 1)' : 'NEW MONTHLY PROGRESS (File 2 vs File 1)',
                 bold: true,
               },
               {

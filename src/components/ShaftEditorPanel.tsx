@@ -13,10 +13,12 @@ import {
   Clock,
   CircleDashed,
   Search,
+  Building2,
 } from 'lucide-react';
 import {
   AppState,
   PipeDia,
+  PumpStationData,
   ShaftRecord,
   ShaftType,
   UiLang,
@@ -28,6 +30,7 @@ import {
   formatDateDisplay,
   getManholeStatus,
   getPartStatus,
+  getPumpLowerStatus,
   getShaftCompletedLayersCount,
   getShaftStatus,
   getTunnelStatus,
@@ -134,10 +137,28 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
   const lang: UiLang = state.uiLang;
   const L = LABELS[lang];
 
+  const isPumpSelected = selectedShaftId === 'PUMP_STATION';
   const idx = state.shafts.findIndex((s) => s.id === selectedShaftId);
   const shaft = state.shafts[idx >= 0 ? idx : 0];
-  const prevShaft = idx > 0 ? state.shafts[idx - 1] : null;
-  const nextShaft = idx < state.shafts.length - 1 ? state.shafts[idx + 1] : null;
+  const prevShaft = isPumpSelected
+    ? state.shafts[state.shafts.length - 1]
+    : idx > 0
+    ? state.shafts[idx - 1]
+    : null;
+  const nextShaftId = isPumpSelected
+    ? null
+    : idx < state.shafts.length - 1
+    ? state.shafts[idx + 1].id
+    : 'PUMP_STATION';
+
+  const updatePumpStation = (
+    updater: (ps: PumpStationData) => PumpStationData
+  ) => {
+    onUpdateState((prev) => ({
+      ...prev,
+      pumpStation: updater(prev.pumpStation),
+    }));
+  };
 
   const activeBaseline =
     state.viewMode === 'monthly' ? state.monthlyBaseline : state.weeklyBaseline;
@@ -279,23 +300,23 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
         </button>
       </div>
 
-      {/* ==================== TAB 1: SINGLE SHAFT EDITOR ==================== */}
+      {/* ==================== TAB 1: SINGLE SHAFT / PUMP STATION EDITOR ==================== */}
       {activeTab === 'single' && (
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
-          {/* Shaft Navigator Bar */}
+          {/* Shaft + Pump Station Navigator Bar */}
           <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 p-2">
             <button
               disabled={!prevShaft}
               onClick={() => prevShaft && onSelectShaft(prevShaft.id)}
               className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-              title="Previous Shaft"
+              title="Previous"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
 
             <div className="flex flex-1 flex-col items-center">
               <select
-                value={shaft.id}
+                value={isPumpSelected ? 'PUMP_STATION' : shaft.id}
                 onChange={(e) => onSelectShaft(e.target.value)}
                 className="w-full rounded-md border border-blue-300 bg-white px-2.5 py-1 text-center text-sm font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -304,26 +325,322 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                     Shaft {s.id} → {s.nextId} ({s.pipeDia})
                   </option>
                 ))}
+                <option value="PUMP_STATION">
+                  ★ Pump Station (Golapbag SPS — 2 Parts)
+                </option>
               </select>
-              <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[11px]">
-                <span className="text-slate-500 font-medium">Shaft:</span>
-                <StatusChip status={shStatus} />
-                <span className="text-slate-500 font-medium ml-1">MH:</span>
-                <StatusChip status={mhStatus} />
-                <span className="text-slate-500 font-medium ml-1">MT:</span>
-                <StatusChip status={mtStatus} />
-              </div>
+              {isPumpSelected ? (
+                <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[11px]">
+                  <span className="text-slate-500 font-medium">Lower:</span>
+                  <StatusChip status={getPumpLowerStatus(state.pumpStation)} />
+                  <span className="text-slate-500 font-medium ml-1">Machine Room:</span>
+                  <StatusChip status={state.pumpStation.machineRoom.status} />
+                </div>
+              ) : (
+                <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[11px]">
+                  <span className="text-slate-500 font-medium">Shaft:</span>
+                  <StatusChip status={shStatus} />
+                  <span className="text-slate-500 font-medium ml-1">MH:</span>
+                  <StatusChip status={mhStatus} />
+                  <span className="text-slate-500 font-medium ml-1">MT:</span>
+                  <StatusChip status={mtStatus} />
+                </div>
+              )}
             </div>
 
             <button
-              disabled={!nextShaft}
-              onClick={() => nextShaft && onSelectShaft(nextShaft.id)}
+              disabled={!nextShaftId}
+              onClick={() => nextShaftId && onSelectShaft(nextShaftId)}
               className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-              title="Next Shaft"
+              title="Next"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
+
+          {/* Quick Jump Pill to Pump Station */}
+          {!isPumpSelected && (
+            <button
+              onClick={() => onSelectShaft('PUMP_STATION')}
+              className="flex w-full items-center justify-between rounded-md border border-teal-200 bg-teal-50/70 px-2.5 py-1.5 text-xs font-semibold text-teal-900 hover:bg-teal-100 transition"
+            >
+              <span className="flex items-center gap-1.5">
+                <Building2 className="h-3.5 w-3.5 text-teal-700" />
+                {lang === 'bn'
+                  ? 'Pump Station এডিট করুন (২ অংশ: Main + Machine Room)'
+                  : 'Edit Pump Station (Golapbag SPS — 2 Parts)'}
+              </span>
+              <span className="text-[11px] font-bold text-teal-700">Open →</span>
+            </button>
+          )}
+
+          {/* ==================== PUMP STATION 2-PART EDITOR ==================== */}
+          {isPumpSelected ? (
+            <div className="space-y-3">
+              {/* UPPER PART: MACHINE ROOM */}
+              <div className="rounded-lg border border-indigo-200 bg-white p-3 shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="flex items-center gap-1.5 text-xs font-bold text-indigo-950 uppercase tracking-wide">
+                    <Building2 className="h-3.5 w-3.5 text-indigo-600" />
+                    {lang === 'bn'
+                      ? 'উপরের অংশ: Machine Room (+7.0m – +19.5m)'
+                      : 'Upper Part: Machine Room (+7.0m – +19.5m)'}
+                  </h3>
+                  <StatusChip status={state.pumpStation.machineRoom.status} />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                    {lang === 'bn' ? 'কাজের অবস্থা (Status)' : 'Work Status'}
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['complete', 'ongoing', 'remaining'] as WorkStatus[]).map((st) => {
+                      const active = state.pumpStation.machineRoom.status === st;
+                      const style =
+                        st === 'complete'
+                          ? active
+                            ? 'bg-emerald-600 text-white border-emerald-700'
+                            : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                          : st === 'ongoing'
+                          ? active
+                            ? 'bg-amber-500 text-slate-950 border-amber-600'
+                            : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'
+                          : active
+                          ? 'bg-rose-600 text-white border-rose-700'
+                          : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50';
+                      return (
+                        <button
+                          key={st}
+                          onClick={() =>
+                            updatePumpStation((ps) => ({
+                              ...ps,
+                              machineRoom: { ...ps.machineRoom, status: st },
+                            }))
+                          }
+                          className={`rounded-md border px-2 py-1.5 text-[11px] font-bold capitalize transition ${style}`}
+                        >
+                          {st === 'ongoing' ? 'On-going' : st}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500">
+                      {L.sDate}
+                    </label>
+                    <input
+                      type="date"
+                      value={state.pumpStation.machineRoom.sDate}
+                      onChange={(e) =>
+                        updatePumpStation((ps) => ({
+                          ...ps,
+                          machineRoom: { ...ps.machineRoom, sDate: e.target.value },
+                        }))
+                      }
+                      className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500">
+                      {L.eDate}
+                    </label>
+                    <input
+                      type="date"
+                      value={state.pumpStation.machineRoom.eDate}
+                      onChange={(e) =>
+                        updatePumpStation((ps) => ({
+                          ...ps,
+                          machineRoom: { ...ps.machineRoom, eDate: e.target.value },
+                        }))
+                      }
+                      className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {(() => {
+                  const mrDur = calcDurationDays(
+                    state.pumpStation.machineRoom.sDate,
+                    state.pumpStation.machineRoom.eDate
+                  );
+                  return (
+                    <div className="flex items-center justify-between rounded bg-slate-50 px-2.5 py-1.5 text-xs">
+                      <span className="text-slate-600 font-medium">{L.duration}:</span>
+                      <span className="font-bold text-slate-900">
+                        {mrDur !== null
+                          ? `${mrDur} Days`
+                          : state.pumpStation.machineRoom.status === 'ongoing'
+                          ? 'On-going'
+                          : 'Remaining'}
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* LOWER PART: MAIN PUMP STATION STRUCTURE (5 LAYERS + HEIGHTS) */}
+              <div className="rounded-lg border border-emerald-200 bg-white p-3 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="flex items-center gap-1.5 text-xs font-bold text-emerald-950 uppercase tracking-wide">
+                    <Layers className="h-3.5 w-3.5 text-emerald-600" />
+                    {lang === 'bn'
+                      ? 'নিচের অংশ: Main Pump Structure (৫ লেয়ার)'
+                      : 'Lower Part: Main Pump Structure (5 Layers)'}
+                  </h3>
+                  <StatusChip status={getPumpLowerStatus(state.pumpStation)} />
+                </div>
+
+                {/* Editable Lengths: Total Height, Casting Complete, Sinking Complete */}
+                <div className="grid grid-cols-3 gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600">
+                      Total Height (m)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      value={state.pumpStation.totalHeightM}
+                      onChange={(e) =>
+                        updatePumpStation((ps) => ({
+                          ...ps,
+                          totalHeightM: Math.max(0, Number(e.target.value) || 0),
+                        }))
+                      }
+                      className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-blue-700">
+                      Casting Len (m)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      value={state.pumpStation.castingCompleteM}
+                      onChange={(e) =>
+                        updatePumpStation((ps) => ({
+                          ...ps,
+                          castingCompleteM: Math.max(0, Number(e.target.value) || 0),
+                        }))
+                      }
+                      className="mt-0.5 w-full rounded border border-blue-300 bg-white px-2 py-1 text-xs font-bold text-blue-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-teal-700">
+                      Sinking Len (m)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      value={state.pumpStation.sinkingCompletedM}
+                      onChange={(e) =>
+                        updatePumpStation((ps) => ({
+                          ...ps,
+                          sinkingCompletedM: Math.max(0, Number(e.target.value) || 0),
+                        }))
+                      }
+                      className="mt-0.5 w-full rounded border border-teal-300 bg-white px-2 py-1 text-xs font-bold text-teal-900"
+                    />
+                  </div>
+                </div>
+
+                {/* 5 Layers Editor */}
+                <div className="space-y-2">
+                  {state.pumpStation.layers.map((ly, li) => {
+                    const dur = calcDurationDays(ly.sDate, ly.eDate);
+                    return (
+                      <div
+                        key={ly.name}
+                        className="rounded-md border border-slate-200 bg-slate-50/70 p-2 space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-slate-800">
+                            {ly.name}
+                          </span>
+                          <div className="flex gap-1">
+                            {(['complete', 'ongoing', 'remaining'] as WorkStatus[]).map((st) => {
+                              const active = ly.status === st;
+                              return (
+                                <button
+                                  key={st}
+                                  onClick={() =>
+                                    updatePumpStation((ps) => ({
+                                      ...ps,
+                                      layers: ps.layers.map((item, idx2) =>
+                                        idx2 === li ? { ...item, status: st } : item
+                                      ),
+                                    }))
+                                  }
+                                  className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+                                    active
+                                      ? st === 'complete'
+                                        ? 'bg-emerald-600 text-white border-emerald-700'
+                                        : st === 'ongoing'
+                                        ? 'bg-amber-400 text-slate-950 border-amber-600'
+                                        : 'bg-rose-600 text-white border-rose-700'
+                                      : 'bg-white text-slate-600 border-slate-300'
+                                  }`}
+                                >
+                                  {st === 'complete'
+                                    ? 'Done'
+                                    : st === 'ongoing'
+                                    ? 'On-going'
+                                    : 'Rem'}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[9px] text-slate-500">S. Date</label>
+                            <input
+                              type="date"
+                              value={ly.sDate}
+                              onChange={(e) =>
+                                updatePumpStation((ps) => ({
+                                  ...ps,
+                                  layers: ps.layers.map((item, idx2) =>
+                                    idx2 === li ? { ...item, sDate: e.target.value } : item
+                                  ),
+                                }))
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[11px]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] text-slate-500">E. Date</label>
+                            <input
+                              type="date"
+                              value={ly.eDate}
+                              onChange={(e) =>
+                                updatePumpStation((ps) => ({
+                                  ...ps,
+                                  layers: ps.layers.map((item, idx2) =>
+                                    idx2 === li ? { ...item, eDate: e.target.value } : item
+                                  ),
+                                }))
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[11px]"
+                            />
+                          </div>
+                        </div>
+                        <div className="text-right text-[10px] font-semibold text-slate-600">
+                          Duration: {dur !== null ? `${dur} Days` : '-'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
 
           {/* SECTION 1: SHAFT & LAYERS (6-13) */}
           <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs space-y-2.5">
@@ -964,6 +1281,8 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 </div>
               )}
             </div>
+          )}
+            </>
           )}
         </div>
       )}
