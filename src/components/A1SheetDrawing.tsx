@@ -2,8 +2,11 @@ import React from 'react';
 import {
   AppState,
   PumpStationData,
+  SectionTab,
   ShaftRecord,
   ShaftSnapshotItem,
+  WbSectionData,
+  WorkStatus,
 } from '../types';
 import {
   calcDurationDays,
@@ -16,12 +19,15 @@ import {
   getTunnelStatus,
   resolveDisplayContext,
 } from '../utils/calculations';
+import { WbNavigationMapGroup, WcNavigationMapGroup } from './NavigationMaps';
 
 interface A1SheetDrawingProps {
   state: AppState;
   selectedShaftId: string;
   onSelectShaft: (id: string, focus?: 'shaft' | 'manhole' | 'tunnel') => void;
-  svgRef: React.RefObject<SVGSVGElement>;
+  onSelectWbNode?: (nodeId: string) => void;
+  svgRef: React.Ref<SVGSVGElement>;
+  forceSection?: SectionTab;
 }
 
 const SHEET_W = 1682; // 841mm * 2
@@ -31,24 +37,35 @@ function trunc(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + '...' : s;
 }
 
+function statusBadgeColor(st: WorkStatus) {
+  if (st === 'complete') return '#16a34a';
+  if (st === 'ongoing') return '#f59e0b';
+  return '#dc2626';
+}
+
 export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
   state,
   selectedShaftId,
   onSelectShaft,
+  onSelectWbNode,
   svgRef,
+  forceSection,
 }) => {
   const { viewMode, colors, settings } = state;
-  const { displayShafts: shafts, displayPump: pumpStation, baseline, file1Label, file2Label } =
-    resolveDisplayContext(state);
-  const summary = computeSummary(shafts, baseline);
+  const activeSection = forceSection || state.activeSection;
 
-  const cols = settings.layoutMode === '12col' ? 12 : 10;
-  const gridX = 46; // Left room for row-wrap incoming bars (60%..100%)
-  const gridY = 60;
-  const gridW = 1584; // Leaves right room inside 1666 border for row-wrap exiting bars (10%..50%)
-  const colW = gridW / cols;
-  const sx = colW / 158.4; // 1.0 in 10col, ~0.833 in 12col
-  const rowH = 232;
+  const {
+    displayShafts: waShafts,
+    displayPump: pumpStation,
+    displayWb: wbData,
+    displayWc: wcData,
+    baseline,
+    file1Label,
+    file2Label,
+  } = resolveDisplayContext(state);
+
+  const waSummary = computeSummary(waShafts, baseline, pumpStation);
+  const wcSummary = computeSummary(wcData.shafts, baseline, undefined, baseline.wcShafts);
 
   const activePeriodLabel =
     viewMode === 'weekly'
@@ -58,9 +75,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       : 'OVERALL CONSTRUCTION STATUS';
 
   const currHighlight =
-    viewMode === 'monthly'
-      ? colors.thisMonthHighlight
-      : colors.thisWeekHighlight;
+    viewMode === 'monthly' ? colors.thisMonthHighlight : colors.thisWeekHighlight;
 
   const getLayerFill = (
     shaft: ShaftRecord,
@@ -71,9 +86,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     if (viewMode === 'overall') return colors.overallShaft;
     const prevDone = Boolean(bSnap?.layerFlags?.[layerIndex]);
     if (prevDone) {
-      return viewMode === 'weekly'
-        ? colors.prevWeekShaft
-        : colors.prevMonthShaft;
+      return viewMode === 'weekly' ? colors.prevWeekShaft : colors.prevMonthShaft;
     }
     return currHighlight;
   };
@@ -85,20 +98,11 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     if (!shaft.bottomSlabDone) return null;
     if (viewMode === 'overall') return colors.overallShaft;
     if (bSnap?.bottomSlabDone) {
-      return viewMode === 'weekly'
-        ? colors.prevWeekShaft
-        : colors.prevMonthShaft;
+      return viewMode === 'weekly' ? colors.prevWeekShaft : colors.prevMonthShaft;
     }
     return currHighlight;
   };
 
-  const statusBadgeColor = (st: 'remaining' | 'ongoing' | 'complete') => {
-    if (st === 'complete') return '#16a34a';
-    if (st === 'ongoing') return '#f59e0b';
-    return '#dc2626';
-  };
-
-  // Render horizontal tunnel bar (supports full 10..100 or split wrap 10..50 / 60..100)
   const renderTunnelBar = (
     shaft: ShaftRecord,
     xStart: number,
@@ -106,9 +110,10 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     totalWidth: number,
     pctFrom: number,
     pctTo: number,
-    captionMode: 'full' | 'exit' | 'entry' | 'pump'
+    captionMode: 'full' | 'exit' | 'entry' | 'pump',
+    bSnap?: ShaftSnapshotItem
   ) => {
-    const bSnap = baseline.shafts[shaft.id];
+    const safeW = Math.max(10, totalWidth);
     const prevPct =
       viewMode === 'overall'
         ? shaft.tunnelPct
@@ -124,15 +129,14 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
 
     const spanPct = pctTo - pctFrom + 10;
     const boxCount = spanPct / 10;
-    const boxW = totalWidth / boxCount;
-    const barH = 14;
+    const boxW = safeW / boxCount;
+    const barH = 13.5;
 
     const rangeStart = pctFrom - 10;
-    const clampRange = (p: number) =>
-      Math.max(0, Math.min(spanPct, p - rangeStart));
+    const clampRange = (p: number) => Math.max(0, Math.min(spanPct, p - rangeStart));
 
-    const prevW = (clampRange(prevPct) / spanPct) * totalWidth;
-    const currW = (clampRange(currPct) / spanPct) * totalWidth;
+    const prevW = (clampRange(prevPct) / spanPct) * safeW;
+    const currW = (clampRange(currPct) / spanPct) * safeW;
     const deltaPct =
       viewMode === 'overall' ? 0 : Math.max(0, currPct - (bSnap?.tunnelPct ?? 0));
 
@@ -149,13 +153,13 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             x2={bx}
             y2={yTop + barH}
             stroke="#1e3a8a"
-            strokeWidth={0.65}
+            strokeWidth={0.6}
           />
           <text
             x={bx + boxW / 2}
-            y={yTop + 9.5}
+            y={yTop + 9.2}
             textAnchor="middle"
-            fontSize={4.6}
+            fontSize={boxW < 8 ? 3.9 : 4.5}
             fontWeight="700"
             fill={isDarkBg ? '#ffffff' : '#1e3a8a'}
           >
@@ -165,7 +169,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       );
     }
 
-    const captionCenterX = xStart + totalWidth / 2;
+    const captionCenterX = xStart + safeW / 2;
 
     return (
       <g
@@ -178,7 +182,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
         <rect
           x={xStart}
           y={yTop}
-          width={totalWidth}
+          width={safeW}
           height={barH}
           fill="#ffffff"
           stroke="#1e3a8a"
@@ -206,7 +210,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
         <rect
           x={xStart}
           y={yTop}
-          width={totalWidth}
+          width={safeW}
           height={barH}
           fill="none"
           stroke="#1e3a8a"
@@ -217,9 +221,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           <g>
             <text
               x={captionCenterX}
-              y={yTop + 21.5}
+              y={yTop + 21}
               textAnchor="middle"
-              fontSize={5.0}
+              fontSize={4.8}
               fontWeight="600"
               fill="#1e3a8a"
             >
@@ -228,9 +232,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             </text>
             <text
               x={captionCenterX}
-              y={yTop + 28.5}
+              y={yTop + 27.8}
               textAnchor="middle"
-              fontSize={5.2}
+              fontSize={5.0}
               fontWeight="700"
               fill="#1e3a8a"
             >
@@ -243,9 +247,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           <g>
             <text
               x={captionCenterX}
-              y={yTop + 21.5}
+              y={yTop + 21}
               textAnchor="middle"
-              fontSize={4.7}
+              fontSize={4.6}
               fontWeight="700"
               fill="#1e3a8a"
             >
@@ -254,9 +258,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             </text>
             <text
               x={captionCenterX}
-              y={yTop + 28.5}
+              y={yTop + 27.8}
               textAnchor="middle"
-              fontSize={4.8}
+              fontSize={4.7}
               fontWeight="700"
               fill="#1e3a8a"
             >
@@ -269,9 +273,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           <g>
             <text
               x={captionCenterX}
-              y={yTop + 21.5}
+              y={yTop + 21}
               textAnchor="middle"
-              fontSize={4.7}
+              fontSize={4.6}
               fontWeight="700"
               fill="#1e3a8a"
             >
@@ -279,9 +283,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             </text>
             <text
               x={captionCenterX}
-              y={yTop + 28.5}
+              y={yTop + 27.8}
               textAnchor="middle"
-              fontSize={4.6}
+              fontSize={4.5}
               fontWeight="600"
               fill="#475569"
             >
@@ -294,9 +298,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           <g>
             <text
               x={captionCenterX}
-              y={yTop + 21.5}
+              y={yTop + 21}
               textAnchor="middle"
-              fontSize={4.9}
+              fontSize={4.8}
               fontWeight="600"
               fill="#1e3a8a"
             >
@@ -304,9 +308,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             </text>
             <text
               x={captionCenterX}
-              y={yTop + 28.5}
+              y={yTop + 27.8}
               textAnchor="middle"
-              fontSize={5.1}
+              fontSize={5.0}
               fontWeight="700"
               fill="#1e3a8a"
             >
@@ -318,36 +322,597 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     );
   };
 
-  // Render 2-Part Golapbag SPS Pump Station (Lower 5-Layer Main Caisson + Upper Machine Room)
+  /**
+   * Renders a grid of shafts (works for BOTH WA 37-shafts and WC 27-shafts!)
+   * Fix #1: Micro-tunnelling bar touches BOTH shaft walls flush (0 gap!)
+   * Fix #3: L:X/Y placed right beside "Shaft WA-()" / "Shaft WC-()"
+   */
+  const renderShaftGrid = (
+    shaftList: ShaftRecord[],
+    baselineMap: Record<string, ShaftSnapshotItem>,
+    opts: {
+      cols: number;
+      gridX: number;
+      gridY: number;
+      gridW: number;
+      rowH: number;
+      connectLastToPump: boolean;
+      pumpStructAbsX?: number;
+    }
+  ) => {
+    const { cols, gridX, gridY, gridW, rowH, connectLastToPump, pumpStructAbsX } = opts;
+    const colW = gridW / cols;
+    const sx = colW / 158.4;
+
+    // Shared shaft schematic coords (W1..WN centered INSIDE left wall -> zero overhang!)
+    const tblW = 68 * sx;
+    const wallLeftX = 76 * sx;
+    const wallThick = 9.5 * sx;
+    const innerX = wallLeftX + wallThick;
+    const innerW = 33 * sx;
+    const wallRightX = innerX + innerW;
+    const shaftTopY = rowH < 224 ? 58 : 63;
+    const wallH = rowH < 224 ? 108 : 116;
+    const botSlabH = 6.5;
+    const tunnelBarY = shaftTopY + wallH - 16.5;
+
+    return shaftList.map((s, idx) => {
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      const cellX = gridX + col * colW;
+      const cellY = gridY + row * rowH;
+
+      const bSnap = baselineMap[s.id];
+      const shStatus = getShaftStatus(s);
+      const mhStatus = getManholeStatus(s);
+      const mtStatus = getTunnelStatus(s);
+      const shDur = calcDurationDays(s.shaftSDate, s.shaftEDate);
+      const mtDur = calcDurationDays(s.tunnelSDate, s.tunnelEDate);
+      const mhDur = calcDurationDays(s.manholeSDate, s.manholeEDate);
+      const shDoneLayers = getShaftCompletedLayersCount(s);
+
+      const isSelected = s.id === selectedShaftId;
+      const layerH = wallH / s.totalLayers;
+
+      // Manhole 2 parts inside shaft interior
+      const mhW = 19 * sx;
+      const mhX = innerX + (innerW - mhW) / 2;
+      const precastY = shaftTopY + 1;
+      const precastH = Math.round(wallH * 0.42);
+      const castingY = precastY + precastH;
+      const castingH = wallH - precastH - 2;
+
+      const mhPrevColor =
+        viewMode === 'overall'
+          ? colors.overallCasting
+          : viewMode === 'weekly'
+          ? colors.prevWeekManhole
+          : colors.prevMonthManhole;
+      const precastBaseColor =
+        viewMode === 'overall'
+          ? colors.overallPrecast
+          : viewMode === 'weekly'
+          ? colors.prevWeekManhole
+          : colors.prevMonthManhole;
+
+      const prevCastPct =
+        viewMode === 'overall'
+          ? s.castingPct
+          : Math.min(s.castingPct, bSnap?.castingPct ?? 0);
+      const currCastPct = s.castingPct;
+
+      const prevPrePct =
+        viewMode === 'overall'
+          ? s.precastPct
+          : Math.min(s.precastPct, bSnap?.precastPct ?? 0);
+      const currPrePct = s.precastPct;
+
+      const isLastInRow = col === cols - 1;
+      const isLastShaft = idx === shaftList.length - 1;
+      const hasOutgoingTunnel = s.tunnelLengthM > 0;
+
+      return (
+        <g
+          key={s.id}
+          transform={`translate(${cellX}, ${cellY})`}
+          style={{ cursor: 'pointer' }}
+          onClick={() => onSelectShaft(s.id, 'shaft')}
+        >
+          {isSelected && (
+            <rect
+              data-selection-ring="true"
+              x={1}
+              y={1}
+              width={colW - 2}
+              height={rowH - 6}
+              rx={4}
+              fill="#eff6ff"
+              fillOpacity={0.35}
+              stroke="#2563eb"
+              strokeWidth={1.6}
+              strokeDasharray="4,2"
+            />
+          )}
+
+          {/* Title + L:X/Y right next to Shaft ID (Fix #3) */}
+          <text
+            x={colW * 0.54}
+            y={13}
+            textAnchor="middle"
+            fontSize={9.2 * Math.max(0.86, sx)}
+            fontWeight="700"
+            fill="#0f172a"
+          >
+            Shaft {s.id}
+            <tspan
+              dx={5}
+              fontSize={6.2 * Math.max(0.86, sx)}
+              fontWeight="700"
+              fill={statusBadgeColor(shStatus)}
+            >
+              L:{shDoneLayers}/{s.totalLayers}
+            </tspan>
+          </text>
+
+          {/* --- LEFT DESCRIPTIONS & STATUS TABLES --- */}
+          <g transform={`translate(2, ${rowH < 224 ? 17 : 18})`}>
+            <text
+              x={tblW / 2}
+              y={5}
+              textAnchor="middle"
+              fontSize={5.0}
+              fontWeight="700"
+              fill="#1e3a8a"
+              textDecoration="underline"
+            >
+              Shaft Descriptions:
+            </text>
+            <rect
+              x={0}
+              y={7}
+              width={tblW}
+              height={34}
+              fill="#ffffff"
+              stroke="#1e3a8a"
+              strokeWidth={0.65}
+            />
+            <line x1={29 * sx} y1={7} x2={29 * sx} y2={41} stroke="#1e3a8a" strokeWidth={0.5} />
+            {[1, 2, 3].map((r) => (
+              <line
+                key={r}
+                x1={0}
+                y1={7 + r * 8.5}
+                x2={tblW}
+                y2={7 + r * 8.5}
+                stroke="#1e3a8a"
+                strokeWidth={0.5}
+              />
+            ))}
+            <text x={2} y={13} fontSize={4.4} fill="#1e3a8a">Shaft Size</text>
+            <text x={29 * sx + (tblW - 29 * sx) / 2} y={13} textAnchor="middle" fontSize={4.7} fontWeight="600" fill="#0f172a">{s.shaftSize}</text>
+
+            <text x={2} y={21.5} fontSize={4.4} fill="#1e3a8a">Type</text>
+            <text x={29 * sx + (tblW - 29 * sx) / 2} y={21.5} textAnchor="middle" fontSize={4.4} fontWeight="600" fill="#0f172a">{trunc(s.shaftType, 13)}</text>
+
+            <text x={2} y={30} fontSize={4.4} fill="#1e3a8a">Net Height</text>
+            <text x={29 * sx + (tblW - 29 * sx) / 2} y={30} textAnchor="middle" fontSize={4.7} fontWeight="600" fill="#0f172a">{s.netHeightMm}</text>
+
+            <text x={2} y={38.5} fontSize={4.4} fill="#1e3a8a">Bot. Slab</text>
+            <text x={29 * sx + (tblW - 29 * sx) / 2} y={38.5} textAnchor="middle" fontSize={4.7} fontWeight="600" fill="#0f172a">{s.bottomSlabMm}</text>
+
+            {/* Construction Status Table */}
+            <text
+              x={tblW / 2}
+              y={48}
+              textAnchor="middle"
+              fontSize={5.0}
+              fontWeight="700"
+              fill="#1e3a8a"
+              textDecoration="underline"
+            >
+              Construction Status
+            </text>
+            <rect
+              x={0}
+              y={50}
+              width={tblW}
+              height={78}
+              fill="#ffffff"
+              stroke="#1e3a8a"
+              strokeWidth={0.65}
+            />
+            <line x1={11 * sx} y1={50} x2={11 * sx} y2={128} stroke="#1e3a8a" strokeWidth={0.5} />
+            <line x1={29 * sx} y1={50} x2={29 * sx} y2={128} stroke="#1e3a8a" strokeWidth={0.5} />
+
+            {[
+              {
+                name: 'Shaft',
+                y: 50,
+                st: shStatus,
+                sD: formatDateDisplay(s.shaftSDate),
+                eD: s.shaftEDate ? formatDateDisplay(s.shaftEDate) : shStatus === 'ongoing' ? 'On-going' : '',
+                dur: shDur !== null ? `${shDur} Days` : shStatus === 'ongoing' ? 'On-going' : 'Rem.',
+              },
+              {
+                name: 'Tunnel',
+                y: 76,
+                st: mtStatus,
+                sD: formatDateDisplay(s.tunnelSDate),
+                eD: s.tunnelEDate ? formatDateDisplay(s.tunnelEDate) : mtStatus === 'ongoing' ? 'On-going' : '',
+                dur: mtDur !== null ? `${mtDur} Days` : mtStatus === 'ongoing' ? 'On-going' : 'Rem.',
+              },
+              {
+                name: 'Manhole',
+                y: 102,
+                st: mhStatus,
+                sD: formatDateDisplay(s.manholeSDate),
+                eD: s.manholeEDate ? formatDateDisplay(s.manholeEDate) : mhStatus === 'ongoing' ? 'On-going' : '',
+                dur: mhDur !== null ? `${mhDur} Days` : mhStatus === 'ongoing' ? 'On-going' : 'Rem.',
+              },
+            ].map((grp, gi) => (
+              <g key={grp.name}>
+                {gi > 0 && (
+                  <line x1={0} y1={grp.y} x2={tblW} y2={grp.y} stroke="#1e3a8a" strokeWidth={0.75} />
+                )}
+                <rect x={0.5} y={grp.y + 0.5} width={2.8} height={25} fill={statusBadgeColor(grp.st)} />
+                <line x1={11 * sx} y1={grp.y + 8.6} x2={tblW} y2={grp.y + 8.6} stroke="#94a3b8" strokeWidth={0.4} />
+                <line x1={11 * sx} y1={grp.y + 17.3} x2={tblW} y2={grp.y + 17.3} stroke="#94a3b8" strokeWidth={0.4} />
+
+                <text
+                  x={7 * sx}
+                  y={grp.y + 13}
+                  textAnchor="middle"
+                  fontSize={4.2}
+                  fontWeight="700"
+                  fill="#1e3a8a"
+                  transform={`rotate(-90, ${7 * sx}, ${grp.y + 13})`}
+                >
+                  {grp.name}
+                </text>
+
+                <text x={12.5 * sx} y={grp.y + 6.2} fontSize={4.1} fill="#334155">S.Date</text>
+                <text x={29 * sx + (tblW - 29 * sx) / 2} y={grp.y + 6.2} textAnchor="middle" fontSize={4.5} fill="#0f172a">{grp.sD}</text>
+
+                <text x={12.5 * sx} y={grp.y + 14.8} fontSize={4.1} fill="#334155">E.Date</text>
+                <text
+                  x={29 * sx + (tblW - 29 * sx) / 2}
+                  y={grp.y + 14.8}
+                  textAnchor="middle"
+                  fontSize={4.4}
+                  fontWeight={grp.eD === 'On-going' ? '700' : '400'}
+                  fill={grp.eD === 'On-going' ? '#d97706' : '#0f172a'}
+                >
+                  {grp.eD}
+                </text>
+
+                <text x={12.5 * sx} y={grp.y + 23.4} fontSize={4.1} fill="#334155">Dur.</text>
+                <text
+                  x={29 * sx + (tblW - 29 * sx) / 2}
+                  y={grp.y + 23.4}
+                  textAnchor="middle"
+                  fontSize={4.4}
+                  fontWeight="700"
+                  fill={
+                    grp.st === 'complete'
+                      ? '#15803d'
+                      : grp.st === 'ongoing'
+                      ? '#b45309'
+                      : '#94a3b8'
+                  }
+                >
+                  {grp.dur}
+                </text>
+              </g>
+            ))}
+          </g>
+
+          {/* --- RIGHT CROSS SECTION DIAGRAM --- */}
+          <line
+            x1={wallLeftX - 4}
+            y1={shaftTopY}
+            x2={wallRightX + wallThick + 8}
+            y2={shaftTopY}
+            stroke="#475569"
+            strokeWidth={0.7}
+          />
+          <polygon
+            points={`${innerX + innerW / 2 - 3},${shaftTopY - 4} ${innerX + innerW / 2 + 3},${shaftTopY - 4} ${innerX + innerW / 2},${shaftTopY}`}
+            fill="#64748b"
+          />
+          <text
+            x={innerX + innerW / 2 + 5}
+            y={shaftTopY - 2}
+            fontSize={4.8}
+            fontWeight="700"
+            fill="#334155"
+          >
+            Road Level
+          </text>
+
+          {/* Outer Lip */}
+          <rect
+            x={wallLeftX - 2}
+            y={shaftTopY}
+            width={wallThick + 2}
+            height={3}
+            fill={getLayerFill(s, 0, bSnap) ?? '#ffffff'}
+            stroke={getLayerFill(s, 0, bSnap) ? '#14532d' : colors.remainingOutline}
+            strokeWidth={0.5}
+          />
+          <rect
+            x={wallRightX}
+            y={shaftTopY}
+            width={wallThick + 2}
+            height={3}
+            fill={getLayerFill(s, 0, bSnap) ?? '#ffffff'}
+            stroke={getLayerFill(s, 0, bSnap) ? '#14532d' : colors.remainingOutline}
+            strokeWidth={0.5}
+          />
+
+          {/* Dynamic W1..WN Shaft Layers (W1..WN centered INSIDE Left Wall -> flush tunnel bars!) */}
+          {Array.from({ length: s.totalLayers }).map((_, li) => {
+            const ly = shaftTopY + li * layerH;
+            const fill = getLayerFill(s, li, bSnap);
+            const stroke = fill ? '#14532d' : colors.remainingOutline;
+            const labelColor =
+              fill === colors.overallShaft || fill === currHighlight
+                ? '#052e16'
+                : fill
+                ? '#ffffff'
+                : '#dc2626';
+            return (
+              <g key={li}>
+                <rect
+                  x={wallLeftX}
+                  y={ly}
+                  width={wallThick}
+                  height={Math.max(2, layerH - 0.45)}
+                  fill={fill ?? '#ffffff'}
+                  stroke={stroke}
+                  strokeWidth={0.55}
+                />
+                <rect
+                  x={wallRightX}
+                  y={ly}
+                  width={wallThick}
+                  height={Math.max(2, layerH - 0.45)}
+                  fill={fill ?? '#ffffff'}
+                  stroke={stroke}
+                  strokeWidth={0.55}
+                />
+                <text
+                  x={wallLeftX + wallThick / 2}
+                  y={ly + layerH * 0.72}
+                  textAnchor="middle"
+                  fontSize={(s.totalLayers >= 11 ? 3.55 : 3.95) * Math.max(0.85, sx)}
+                  fontWeight="700"
+                  fill={labelColor}
+                >
+                  W{li + 1}
+                </text>
+              </g>
+            );
+          })}
+
+          {s.sheetPileStyle &&
+            [0.24, 0.52, 0.78].map((frac, si) => (
+              <line
+                key={si}
+                x1={wallLeftX}
+                y1={shaftTopY + wallH * frac}
+                x2={wallRightX + wallThick}
+                y2={shaftTopY + wallH * frac}
+                stroke="#ca8a04"
+                strokeWidth={1.2}
+              />
+            ))}
+
+          {/* Bottom Slab */}
+          {(() => {
+            const bFill = getBottomSlabFill(s, bSnap);
+            return (
+              <rect
+                x={wallLeftX}
+                y={shaftTopY + wallH}
+                width={wallThick * 2 + innerW}
+                height={botSlabH}
+                fill={bFill ?? '#ffffff'}
+                stroke={bFill ? '#14532d' : colors.remainingOutline}
+                strokeWidth={0.65}
+              />
+            );
+          })()}
+
+          {/* --- MANHOLE (2 PARTS: UPPER PRECAST + LOWER CASTING) --- */}
+          <g
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectShaft(s.id, 'manhole');
+            }}
+          >
+            <rect
+              x={mhX + 2.8 * sx}
+              y={precastY}
+              width={mhW - 5.6 * sx}
+              height={precastH}
+              fill="#ffffff"
+              stroke={currPrePct > 0 ? '#0369a1' : colors.remainingOutline}
+              strokeWidth={0.65}
+            />
+            {prevPrePct > 0 && (
+              <rect
+                x={mhX + 2.8 * sx + 0.4}
+                y={precastY + precastH * (1 - prevPrePct / 100)}
+                width={mhW - 5.6 * sx - 0.8}
+                height={precastH * (prevPrePct / 100)}
+                fill={precastBaseColor}
+                fillOpacity={0.85}
+              />
+            )}
+            {viewMode !== 'overall' && currPrePct > prevPrePct && (
+              <rect
+                x={mhX + 2.8 * sx + 0.4}
+                y={precastY + precastH * (1 - currPrePct / 100)}
+                width={mhW - 5.6 * sx - 0.8}
+                height={precastH * ((currPrePct - prevPrePct) / 100)}
+                fill={currHighlight}
+              />
+            )}
+            {[0.25, 0.5, 0.75].map((f) => (
+              <line
+                key={f}
+                x1={mhX + 2.8 * sx}
+                y1={precastY + precastH * f}
+                x2={mhX + mhW - 2.8 * sx}
+                y2={precastY + precastH * f}
+                stroke={currPrePct > 0 ? '#ffffff' : colors.remainingOutline}
+                strokeWidth={0.55}
+              />
+            ))}
+
+            <rect
+              x={mhX}
+              y={castingY}
+              width={mhW}
+              height={castingH}
+              fill="#ffffff"
+              stroke={currCastPct > 0 ? '#1e3a8a' : colors.remainingOutline}
+              strokeWidth={0.7}
+            />
+            {prevCastPct > 0 && (
+              <rect
+                x={mhX + 0.4}
+                y={castingY + castingH * (1 - prevCastPct / 100)}
+                width={mhW - 0.8}
+                height={castingH * (prevCastPct / 100)}
+                fill={mhPrevColor}
+              />
+            )}
+            {viewMode !== 'overall' && currCastPct > prevCastPct && (
+              <rect
+                x={mhX + 0.4}
+                y={castingY + castingH * (1 - currCastPct / 100)}
+                width={mhW - 0.8}
+                height={castingH * ((currCastPct - prevCastPct) / 100)}
+                fill={currHighlight}
+              />
+            )}
+            <rect
+              x={mhX + 3 * sx}
+              y={castingY + 3.5}
+              width={mhW - 6 * sx}
+              height={castingH - 7}
+              fill="#ffffff"
+              fillOpacity={0.88}
+              stroke={currCastPct > 0 ? '#1e3a8a' : colors.remainingOutline}
+              strokeWidth={0.5}
+            />
+            {[0.2, 0.35, 0.5, 0.65, 0.8].map((f) => (
+              <line
+                key={f}
+                x1={mhX + 4.2 * sx}
+                y1={castingY + 3.5 + (castingH - 7) * f}
+                x2={mhX + mhW - 4.2 * sx}
+                y2={castingY + 3.5 + (castingH - 7) * f}
+                stroke="#dc2626"
+                strokeWidth={0.45}
+                strokeDasharray="2,1.5"
+              />
+            ))}
+          </g>
+
+          {/* --- TUNNEL CONNECTION BAR TO NEXT SHAFT (FLUSH AGAINST BOTH WALLS — FIX #1!) --- */}
+          {!isLastInRow && !isLastShaft && hasOutgoingTunnel &&
+            renderTunnelBar(
+              s,
+              wallRightX + wallThick,
+              tunnelBarY,
+              colW + wallLeftX - (wallRightX + wallThick),
+              10,
+              100,
+              'full',
+              bSnap
+            )}
+
+          {/* Exiting 10%..50% bar at right end of row */}
+          {isLastInRow && !isLastShaft && hasOutgoingTunnel &&
+            renderTunnelBar(
+              s,
+              wallRightX + wallThick,
+              tunnelBarY,
+              colW - (wallRightX + wallThick) + 34,
+              10,
+              50,
+              'exit',
+              bSnap
+            )}
+
+          {/* Incoming 60%..100% bar flush against left wall at start of row > 0 */}
+          {col === 0 && row > 0 && idx > 0 && shaftList[idx - 1].tunnelLengthM > 0 &&
+            renderTunnelBar(
+              shaftList[idx - 1],
+              -28,
+              tunnelBarY,
+              wallLeftX - -28,
+              60,
+              100,
+              'entry',
+              baselineMap[shaftList[idx - 1].id]
+            )}
+
+          {/* Last Shaft (WA-36 -> Pump Station) flush into Pump Station left caisson wall */}
+          {isLastShaft && connectLastToPump && hasOutgoingTunnel &&
+            renderTunnelBar(
+              s,
+              wallRightX + wallThick,
+              tunnelBarY,
+              settings.showPumpStation && pumpStructAbsX
+                ? Math.max(40, pumpStructAbsX - (cellX + wallRightX + wallThick))
+                : 96 * sx,
+              10,
+              100,
+              'pump',
+              bSnap
+            )}
+        </g>
+      );
+    });
+  };
+
+  /**
+   * 2-Part Golapbag SPS Pump Station:
+   * - Fix #4: Sinking status (Complete / On-going / Remaining)
+   * - Fix #5: Layers counted from BOTTOM (1st Layer = L1) up to TOP (5th Layer = L5)
+   * - Fix #6: "(Click to Edit)" removed completely!
+   */
   const renderPumpStation = (
     ps: PumpStationData,
     x: number,
     y: number,
-    w: number
+    w: number,
+    h: number
   ) => {
     const isPumpSelected = selectedShaftId === 'PUMP_STATION';
-    const structX = x + 16;
-    const structW = Math.min(182, w * 0.45);
+    const compactPump = h < 224 || w < 340;
+    const structX = x + 6;
+    const structW = compactPump ? Math.min(148, w * 0.44) : Math.min(180, w * 0.45);
 
-    // Vertical geometry inside Row 4 (total row height = 232)
-    // Upper Part: Machine Room (+7.000 to +19.500 PWD)
-    const mrTopY = y + 20;
-    const mrH = 58;
-    const groundY = mrTopY + mrH; // +7.000 PWD / Road Level
+    const mrTopY = y + (compactPump ? 17 : 20);
+    const mrH = compactPump ? 50 : 56;
+    const groundY = mrTopY + mrH;
 
-    // Lower Part: Main Pump Station Structure (-13.000 to +6.550 PWD, 5 Layers)
     const subTopY = groundY;
-    const subH = 114; // ends at y + 192
-    const shoeH = 16;
-    const bodyH = subH - shoeH; // 98 -> 19.6 per layer across 5 layers
-    const layerH = bodyH / Math.max(1, ps.layers.length);
+    const subH = compactPump ? 102 : 114;
+    const shoeH = compactPump ? 14 : 16;
+    const bodyH = subH - shoeH;
+    const layerCount = Math.max(1, ps.layers.length);
+    const layerH = bodyH / layerCount;
 
-    const tblX = structX + structW + 10;
-    const tblW = Math.max(122, x + w - tblX - 4);
+    const tblX = structX + structW + (compactPump ? 6 : 8);
+    const tblW = Math.max(115, x + w - tblX - 3);
 
-    // Status color resolver for Pump Station elements
     const resolvePumpFill = (
-      status: 'remaining' | 'ongoing' | 'complete',
+      status: WorkStatus,
       prevDone: boolean
     ): { fill: string; stroke: string; badgeBg: string; badgeText: string } => {
       if (status === 'complete') {
@@ -387,14 +952,23 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       baseline.pumpMachineRoomStatus === 'complete'
     );
     const lowerStatus = getPumpLowerStatus(ps);
+    const sinkVisual = resolvePumpFill(
+      ps.sinkingStatus,
+      baseline.pumpSinkingStatus === 'complete'
+    );
     const mrDur = calcDurationDays(ps.machineRoom.sDate, ps.machineRoom.eDate);
 
-    // Machine Room Level 2 (Control Room + Food & Tea, top 24u) & Level 1 (Storage + Pump House, lower 34u)
-    const lvl2H = 24;
+    const lvl2H = compactPump ? 21 : 24;
     const lvl1Y = mrTopY + lvl2H;
-    const lvl1H = mrH - lvl2H;
     const midX = structX + structW * 0.52;
-    const leftAnnexW = 14;
+    const leftAnnexW = compactPump ? 10 : 12;
+
+    // Reverse layer indices for table top-down so 5th Layer (top) -> 1st Layer (bottom) matches physical elevation!
+    const topDownLayers = [...ps.layers]
+      .map((ly, idx) => ({ ly, idx }))
+      .reverse();
+
+    const tblRowH = compactPump ? 21 : 24;
 
     return (
       <g
@@ -404,14 +978,13 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           onSelectShaft('PUMP_STATION', 'shaft');
         }}
       >
-        {/* Selection highlight */}
         {isPumpSelected && (
           <rect
             data-selection-ring="true"
             x={x + 1}
             y={y + 1}
             width={w - 3}
-            height={224}
+            height={h - 4}
             rx={4}
             fill="#eff6ff"
             fillOpacity={0.35}
@@ -421,210 +994,138 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           />
         )}
 
-        {/* Title */}
         <text
-          x={x + w * 0.48}
-          y={y + 12}
+          x={x + w * 0.5}
+          y={y + 11.5}
           textAnchor="middle"
-          fontSize={9.2}
+          fontSize={compactPump ? 8.0 : 9.0}
           fontWeight="700"
           fill="#0f172a"
         >
           Pump Station (Golapbag SPS - Sec 1-1)
         </text>
 
-        {/* ================= UPPER PART: MACHINE ROOM ================= */}
-        {/* Side entrance canopy on left (Sec 1-1) */}
+        {/* UPPER PART: MACHINE ROOM */}
         <polygon
-          points={`${structX - leftAnnexW},${groundY - 17} ${structX},${groundY - 22} ${structX},${groundY} ${structX - leftAnnexW},${groundY}`}
+          points={`${structX - leftAnnexW},${groundY - 14} ${structX},${groundY - 19} ${structX},${groundY} ${structX - leftAnnexW},${groundY}`}
           fill={mrVisual.fill}
           fillOpacity={ps.machineRoom.status === 'remaining' ? 1 : 0.78}
           stroke={mrVisual.stroke}
-          strokeWidth={0.75}
+          strokeWidth={0.7}
         />
-
-        {/* Level 2: Control Room + Food & Tea (+14.400 to +19.500) */}
         <rect
-          x={structX + 8}
+          x={structX + 6}
           y={mrTopY}
-          width={structW - 8}
+          width={structW - 6}
           height={lvl2H}
           fill={mrVisual.fill}
           fillOpacity={ps.machineRoom.status === 'remaining' ? 1 : 0.85}
           stroke={mrVisual.stroke}
-          strokeWidth={0.9}
+          strokeWidth={0.85}
         />
-        {/* Parapet roof cap */}
         <rect
-          x={structX + 6}
-          y={mrTopY - 2.5}
-          width={structW - 4}
-          height={3.2}
+          x={structX + 4}
+          y={mrTopY - 2}
+          width={structW - 2}
+          height={2.8}
           fill={ps.machineRoom.status === 'remaining' ? '#e2e8f0' : mrVisual.stroke}
           stroke={mrVisual.stroke}
-          strokeWidth={0.55}
+          strokeWidth={0.5}
         />
-
-        {/* Level 1: Storage Room & Pump House (+7.000 to +14.400) */}
         <rect
           x={structX}
           y={lvl1Y}
           width={structW}
-          height={lvl1H}
+          height={mrH - lvl2H}
           fill={mrVisual.fill}
           fillOpacity={ps.machineRoom.status === 'remaining' ? 1 : 0.88}
           stroke={mrVisual.stroke}
-          strokeWidth={0.95}
+          strokeWidth={0.9}
         />
+        <line x1={midX} y1={mrTopY} x2={midX} y2={groundY} stroke={mrVisual.stroke} strokeWidth={0.65} />
+        <line x1={structX + 6} y1={lvl1Y} x2={midX} y2={lvl1Y} stroke={mrVisual.stroke} strokeWidth={0.75} />
 
-        {/* Interior architectural room partitions (Grid 2 dividing wall + floor slab) */}
-        <line
-          x1={midX}
-          y1={mrTopY}
-          x2={midX}
-          y2={groundY}
-          stroke={mrVisual.stroke}
-          strokeWidth={0.7}
-        />
-        <line
-          x1={structX + 8}
-          y1={lvl1Y}
-          x2={midX}
-          y2={lvl1Y}
-          stroke={mrVisual.stroke}
-          strokeWidth={0.8}
-        />
-        {/* Tiny window silhouettes */}
-        {[structX + 20, structX + 42, midX + 14, midX + 38, midX + 60].map((wx, wi) => (
+        {[0.14, 0.3, 0.58, 0.74, 0.88].map((f, wi) => (
           <rect
             key={wi}
-            x={wx}
-            y={mrTopY + 6}
-            width={11}
-            height={9}
+            x={structX + structW * f}
+            y={mrTopY + 4.5}
+            width={structW * 0.06}
+            height={7.5}
             fill="#ffffff"
             fillOpacity={0.75}
             stroke={mrVisual.stroke}
             strokeWidth={0.45}
           />
         ))}
-        {/* Crane / Pump House high-bay beam & room tags */}
-        <text
-          x={structX + 8 + (midX - structX - 8) / 2}
-          y={mrTopY + 21}
-          textAnchor="middle"
-          fontSize={3.9}
-          fontWeight="700"
-          fill="#0f172a"
-        >
-          Control
-        </text>
-        <text
-          x={midX + (structX + structW - midX) / 2}
-          y={mrTopY + 21}
-          textAnchor="middle"
-          fontSize={3.9}
-          fontWeight="700"
-          fill="#0f172a"
-        >
-          Food/Tea
-        </text>
-        <text
-          x={structX + (midX - structX) / 2}
-          y={lvl1Y + 13}
-          textAnchor="middle"
-          fontSize={4.2}
-          fontWeight="700"
-          fill="#0f172a"
-        >
-          Storage
-        </text>
-        <text
-          x={midX + (structX + structW - midX) / 2}
-          y={lvl1Y + 13}
-          textAnchor="middle"
-          fontSize={4.2}
-          fontWeight="700"
-          fill="#0f172a"
-        >
-          Pump House
-        </text>
+        <text x={structX + 6 + (midX - structX - 6) / 2} y={mrTopY + lvl2H - 3.5} textAnchor="middle" fontSize={3.6} fontWeight="700" fill="#0f172a">Control</text>
+        <text x={midX + (structX + structW - midX) / 2} y={mrTopY + lvl2H - 3.5} textAnchor="middle" fontSize={3.6} fontWeight="700" fill="#0f172a">Food/Tea</text>
+        <text x={structX + (midX - structX) / 2} y={lvl1Y + 10.5} textAnchor="middle" fontSize={3.9} fontWeight="700" fill="#0f172a">Storage</text>
+        <text x={midX + (structX + structW - midX) / 2} y={lvl1Y + 10.5} textAnchor="middle" fontSize={3.9} fontWeight="700" fill="#0f172a">Pump House</text>
 
-        {/* Machine Room Center Status Badge */}
         <rect
-          x={structX + structW * 0.16}
-          y={lvl1Y + 18}
-          width={structW * 0.68}
-          height={12}
+          x={structX + structW * 0.12}
+          y={lvl1Y + 14.5}
+          width={structW * 0.76}
+          height={10.5}
           rx={2}
           fill="#ffffff"
-          fillOpacity={0.92}
+          fillOpacity={0.93}
           stroke={mrVisual.stroke}
-          strokeWidth={0.6}
+          strokeWidth={0.55}
         />
         <text
           x={structX + structW * 0.5}
-          y={lvl1Y + 26.2}
+          y={lvl1Y + 21.8}
           textAnchor="middle"
-          fontSize={4.6}
+          fontSize={compactPump ? 4.1 : 4.4}
           fontWeight="700"
           fill={mrVisual.badgeText}
         >
           MACHINE ROOM: {ps.machineRoom.status.toUpperCase()}
         </text>
 
-        {/* Ground / Road Slab Datum Line (+7.000 PWD) */}
+        {/* Ground Line */}
         <line
-          x1={structX - leftAnnexW - 4}
+          x1={structX - leftAnnexW - 3}
           y1={groundY}
-          x2={structX + structW + 6}
+          x2={structX + structW + 4}
           y2={groundY}
           stroke="#1e293b"
-          strokeWidth={1.1}
+          strokeWidth={1.0}
         />
-        <text
-          x={structX - leftAnnexW - 3}
-          y={groundY + 6.5}
-          fontSize={3.8}
-          fontWeight="700"
-          fill="#475569"
-        >
+        <text x={structX - leftAnnexW - 2} y={groundY + 6} fontSize={3.5} fontWeight="700" fill="#475569">
           +7.0m
         </text>
 
-        {/* ================= LOWER PART: MAIN PUMP STRUCTURE (5 LAYERS) ================= */}
-        {/* Background shaft interior */}
-        <rect
-          x={structX}
-          y={subTopY}
-          width={structW}
-          height={bodyH}
-          fill="#f8fafc"
-          stroke="#64748b"
-          strokeWidth={0.5}
-        />
+        {/* LOWER PART: MAIN PUMP STRUCTURE — LAYERS COUNTED FROM BOTTOM (L1 = 1st Layer) TO TOP (L5 = 5th Layer) (FIX #5!) */}
+        <rect x={structX} y={subTopY} width={structW} height={bodyH} fill="#f8fafc" stroke="#64748b" strokeWidth={0.5} />
 
-        {/* Render each of 5 horizontal construction layers */}
         {ps.layers.map((ly, li) => {
-          const lyY = subTopY + li * layerH;
+          // li=0 (1st Layer) sits at BOTTOM above cutting shoe; li=4 (5th Layer) sits at TOP under +7.0m!
+          const lyY = subTopY + bodyH - (li + 1) * layerH;
           const prevDone = Boolean(baseline.pumpLayersDone?.[li]);
           const vis = resolvePumpFill(ly.status, prevDone);
-          const wallW = 12;
-          const innerMidX = structX + structW / 2 - 4.5;
+          const wallW = compactPump ? 12 : 14;
+          const innerMidX = structX + structW / 2 - 4;
           const partWallX = structX + structW * 0.27;
+          const lblCol =
+            ly.status === 'complete' && vis.fill === colors.overallShaft
+              ? '#052e16'
+              : ly.status === 'remaining'
+              ? '#dc2626'
+              : '#0f172a';
 
           return (
             <g key={ly.name}>
-              {/* Layer light band fill */}
               <rect
                 x={structX + wallW}
                 y={lyY}
                 width={structW - wallW * 2}
                 height={layerH}
                 fill={vis.fill}
-                fillOpacity={ly.status === 'remaining' ? 0.15 : 0.2}
+                fillOpacity={ly.status === 'remaining' ? 0.14 : 0.2}
               />
-              {/* Left Caisson Wall (Grid 1) */}
               <rect
                 x={structX}
                 y={lyY}
@@ -634,7 +1135,6 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 stroke={vis.stroke}
                 strokeWidth={0.65}
               />
-              {/* Right Caisson Wall (Grid 3) */}
               <rect
                 x={structX + structW - wallW}
                 y={lyY}
@@ -644,56 +1144,54 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 stroke={vis.stroke}
                 strokeWidth={0.65}
               />
-              {/* Central Dividing Wall (Grid 2) */}
               <rect
                 x={innerMidX}
                 y={lyY}
-                width={9}
+                width={8}
                 height={layerH - 0.5}
                 fill={vis.fill}
                 stroke={vis.stroke}
                 strokeWidth={0.55}
               />
-              {/* Intermediate inner partition/slab at layers 1, 3, 5 */}
               {(li === 0 || li === 2 || li === 4) && (
                 <rect
                   x={structX + wallW}
-                  y={lyY + layerH - 4.5}
+                  y={lyY + layerH - 4}
                   width={structW - wallW * 2}
-                  height={4.2}
+                  height={3.8}
                   fill={vis.fill}
                   stroke={vis.stroke}
-                  strokeWidth={0.5}
+                  strokeWidth={0.45}
                 />
               )}
-              {li >= 2 && (
+              {li <= 2 && (
                 <rect
                   x={partWallX}
                   y={lyY}
-                  width={5}
+                  width={4.5}
                   height={layerH - 0.5}
                   fill={vis.fill}
                   stroke={vis.stroke}
                   strokeWidth={0.45}
                 />
               )}
-              {/* Layer dashed separation & L1..L5 label */}
               <line
                 x1={structX}
-                y1={lyY + layerH}
+                y1={lyY}
                 x2={structX + structW}
-                y2={lyY + layerH}
+                y2={lyY}
                 stroke="#475569"
                 strokeWidth={0.4}
                 strokeDasharray="2,1.5"
               />
+              {/* L1..L5 inside left wall so WA-36 tunnel bar connects flush without overlap! */}
               <text
-                x={structX - 2.5}
-                y={lyY + layerH * 0.68}
-                textAnchor="end"
-                fontSize={4.4}
+                x={structX + wallW / 2}
+                y={lyY + layerH * 0.66}
+                textAnchor="middle"
+                fontSize={4.2}
                 fontWeight="700"
-                fill={vis.badgeText}
+                fill={lblCol}
               >
                 L{li + 1}
               </text>
@@ -701,44 +1199,41 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           );
         })}
 
-        {/* Cutting Shoe & Base Plug / Tremie Slab (-13.000 to -9.300 PWD) */}
+        {/* Base Plug / Cutting Shoe (linked to bottom L1 layer) */}
         {(() => {
           const shoeY = subTopY + bodyH;
           const shoeVis = resolvePumpFill(
-            ps.layers[4]?.status ?? 'remaining',
-            Boolean(baseline.pumpLayersDone?.[4])
+            ps.layers[0]?.status ?? 'remaining',
+            Boolean(baseline.pumpLayersDone?.[0])
           );
           return (
             <g>
-              {/* Left cutting shoe bevel */}
               <polygon
-                points={`${structX},${shoeY} ${structX + 18},${shoeY} ${structX + 10},${shoeY + shoeH} ${structX},${shoeY + shoeH}`}
+                points={`${structX},${shoeY} ${structX + 16},${shoeY} ${structX + 9},${shoeY + shoeH} ${structX},${shoeY + shoeH}`}
                 fill={shoeVis.fill}
                 stroke={shoeVis.stroke}
-                strokeWidth={0.7}
+                strokeWidth={0.65}
               />
-              {/* Right cutting shoe bevel */}
               <polygon
-                points={`${structX + structW - 18},${shoeY} ${structX + structW},${shoeY} ${structX + structW},${shoeY + shoeH} ${structX + structW - 10},${shoeY + shoeH}`}
+                points={`${structX + structW - 16},${shoeY} ${structX + structW},${shoeY} ${structX + structW},${shoeY + shoeH} ${structX + structW - 9},${shoeY + shoeH}`}
                 fill={shoeVis.fill}
                 stroke={shoeVis.stroke}
-                strokeWidth={0.7}
+                strokeWidth={0.65}
               />
-              {/* Bottom tremie plug slab */}
               <rect
-                x={structX + 10}
-                y={shoeY + 3}
-                width={structW - 20}
-                height={shoeH - 3}
+                x={structX + 9}
+                y={shoeY + 2.5}
+                width={structW - 18}
+                height={shoeH - 2.5}
                 fill={lowerStatus === 'complete' ? '#dcfce7' : '#fee2e2'}
                 stroke={lowerStatus === 'complete' ? '#15803d' : '#dc2626'}
-                strokeWidth={0.7}
+                strokeWidth={0.65}
               />
               <text
                 x={structX + structW / 2}
-                y={shoeY + 12.2}
+                y={shoeY + shoeH * 0.72}
                 textAnchor="middle"
-                fontSize={4.6}
+                fontSize={compactPump ? 4.0 : 4.4}
                 fontWeight="700"
                 fill={lowerStatus === 'complete' ? '#166534' : '#991b1b'}
               >
@@ -748,164 +1243,311 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           );
         })()}
 
-        {/* Lower Structural Summary Captions */}
+        {/* Captions below structure (No "Click to Edit"!) */}
         <text
           x={structX + structW / 2}
-          y={subTopY + subH + 10.5}
+          y={subTopY + subH + 9.5}
           textAnchor="middle"
-          fontSize={5.4}
+          fontSize={compactPump ? 4.7 : 5.2}
           fontWeight="700"
           fill="#1e3a8a"
         >
-          Total H: {ps.totalHeightM}m | Casting: {ps.castingCompleteM}m
+          Total H: {ps.totalHeightM}m | Cast: {ps.castingCompleteM}m
         </text>
         <text
           x={structX + structW / 2}
-          y={subTopY + subH + 19}
+          y={subTopY + subH + 17.5}
           textAnchor="middle"
-          fontSize={5.4}
+          fontSize={compactPump ? 4.7 : 5.2}
           fontWeight="700"
-          fill="#0f766e"
+          fill={sinkVisual.badgeText}
         >
-          Sinking Complete: {ps.sinkingCompletedM}m
+          Sinking: {ps.sinkingCompletedM}m [{ps.sinkingStatus.toUpperCase()}]
         </text>
 
-        {/* ================= RIGHT SIDE 2-PART STATUS TABLE ================= */}
+        {/* RIGHT SIDE 2-PART STATUS TABLE */}
         <g>
-          {/* PART 1: UPPER MACHINE ROOM */}
+          {/* Upper Machine Room Table */}
           <rect
             x={tblX}
-            y={y + 20}
+            y={y + 17}
             width={tblW}
-            height={34}
+            height={compactPump ? 30 : 34}
             fill="#ffffff"
             stroke="#1e3a8a"
             strokeWidth={0.75}
           />
           <rect
             x={tblX}
-            y={y + 20}
+            y={y + 17}
             width={tblW}
-            height={12}
+            height={11}
             fill="#eff6ff"
             stroke="#1e3a8a"
-            strokeWidth={0.6}
+            strokeWidth={0.55}
           />
-          <text x={tblX + 4} y={y + 28.5} fontSize={4.8} fontWeight="700" fill="#1e3a8a">
+          <text x={tblX + 3.5} y={y + 24.5} fontSize={4.4} fontWeight="700" fill="#1e3a8a">
             UPPER: MACHINE ROOM
           </text>
           <rect
-            x={tblX + tblW - 46}
-            y={y + 21.5}
-            width={43}
-            height={9}
+            x={tblX + tblW - 40}
+            y={y + 18.2}
+            width={37}
+            height={8.5}
             rx={1.5}
             fill={mrVisual.badgeBg}
             stroke={mrVisual.badgeText}
             strokeWidth={0.45}
           />
           <text
-            x={tblX + tblW - 24.5}
-            y={y + 27.8}
+            x={tblX + tblW - 21.5}
+            y={y + 24.2}
             textAnchor="middle"
-            fontSize={4.3}
+            fontSize={3.9}
             fontWeight="700"
             fill={mrVisual.badgeText}
           >
             {ps.machineRoom.status.toUpperCase()}
           </text>
-          <text x={tblX + 4} y={y + 41} fontSize={4.8} fill="#334155">
-            S: {formatDateDisplay(ps.machineRoom.sDate)}   |   E: {ps.machineRoom.eDate ? formatDateDisplay(ps.machineRoom.eDate) : ps.machineRoom.status === 'ongoing' ? 'On-going' : '-'}
+          <text x={tblX + 3.5} y={y + 36} fontSize={4.4} fill="#334155">
+            S: {formatDateDisplay(ps.machineRoom.sDate)} | E:{' '}
+            {ps.machineRoom.eDate
+              ? formatDateDisplay(ps.machineRoom.eDate)
+              : ps.machineRoom.status === 'ongoing'
+              ? 'On-going'
+              : '-'}
           </text>
-          <text x={tblX + 4} y={y + 50} fontSize={4.8} fontWeight="700" fill={mrVisual.badgeText}>
-            Duration: {mrDur !== null ? `${mrDur} Days` : ps.machineRoom.status === 'ongoing' ? 'On-going' : 'Remaining'}
+          <text x={tblX + 3.5} y={y + (compactPump ? 44 : 47)} fontSize={4.4} fontWeight="700" fill={mrVisual.badgeText}>
+            Dur: {mrDur !== null ? `${mrDur} Days` : ps.machineRoom.status === 'ongoing' ? 'On-going' : 'Remaining'}
           </text>
 
-          {/* PART 2: LOWER MAIN PUMP STATION (5 LAYERS) */}
+          {/* Lower 5 Layers Table (Top-down L5 -> L1 matching elevation from bottom!) */}
           <text
             x={tblX + tblW / 2}
-            y={y + 62}
+            y={y + (compactPump ? 55 : 60)}
             textAnchor="middle"
-            fontSize={5.2}
+            fontSize={4.7}
             fontWeight="700"
             fill="#1e3a8a"
           >
-            LOWER: MAIN PUMP STRUCTURE (5 LAYERS)
+            LOWER STRUCTURE (5 LAYERS: BTM to TOP)
           </text>
           <rect
             x={tblX}
-            y={y + 65}
+            y={y + (compactPump ? 58 : 63)}
             width={tblW}
-            height={120}
+            height={topDownLayers.length * tblRowH}
             fill="#ffffff"
             stroke="#1e3a8a"
             strokeWidth={0.75}
           />
-          {ps.layers.map((ly, li) => {
-            const rowY = y + 65 + li * 24;
+          {topDownLayers.map(({ ly, idx: origIdx }, rowIdx) => {
+            const rowY = y + (compactPump ? 58 : 63) + rowIdx * tblRowH;
             const dur = calcDurationDays(ly.sDate, ly.eDate);
-            const vis = resolvePumpFill(ly.status, Boolean(baseline.pumpLayersDone?.[li]));
+            const vis = resolvePumpFill(ly.status, Boolean(baseline.pumpLayersDone?.[origIdx]));
             return (
               <g key={ly.name}>
-                {li > 0 && (
-                  <line
-                    x1={tblX}
-                    y1={rowY}
-                    x2={tblX + tblW}
-                    y2={rowY}
-                    stroke="#1e3a8a"
-                    strokeWidth={0.55}
-                  />
+                {rowIdx > 0 && (
+                  <line x1={tblX} y1={rowY} x2={tblX + tblW} y2={rowY} stroke="#1e3a8a" strokeWidth={0.5} />
                 )}
                 <rect
                   x={tblX}
                   y={rowY}
-                  width={42}
-                  height={24}
+                  width={compactPump ? 36 : 40}
+                  height={tblRowH}
                   fill={vis.badgeBg}
                   stroke="#1e3a8a"
-                  strokeWidth={0.5}
+                  strokeWidth={0.45}
                 />
                 <text
-                  x={tblX + 21}
-                  y={rowY + 14}
+                  x={tblX + (compactPump ? 18 : 20)}
+                  y={rowY + tblRowH * 0.58}
                   textAnchor="middle"
-                  fontSize={5.0}
+                  fontSize={4.6}
                   fontWeight="700"
                   fill={vis.badgeText}
                 >
                   {ly.name}
                 </text>
-                <text x={tblX + 46} y={rowY + 9.5} fontSize={4.6} fill="#334155">
-                  S: {formatDateDisplay(ly.sDate)}  |  E: {ly.eDate ? formatDateDisplay(ly.eDate) : ly.status === 'ongoing' ? 'On-going' : '-'}
+                <text x={tblX + (compactPump ? 39 : 44)} y={rowY + tblRowH * 0.4} fontSize={4.2} fill="#334155">
+                  S: {formatDateDisplay(ly.sDate)} | E:{' '}
+                  {ly.eDate ? formatDateDisplay(ly.eDate) : ly.status === 'ongoing' ? 'On-going' : '-'}
                 </text>
-                <text x={tblX + 46} y={rowY + 19} fontSize={4.6} fontWeight="700" fill={vis.badgeText}>
-                  Dur: {dur !== null ? `${dur} Days` : '-'}  ({ly.status.toUpperCase()})
+                <text x={tblX + (compactPump ? 39 : 44)} y={rowY + tblRowH * 0.8} fontSize={4.2} fontWeight="700" fill={vis.badgeText}>
+                  Dur: {dur !== null ? `${dur}d` : '-'} ({ly.status.toUpperCase()})
                 </text>
               </g>
             );
           })}
 
-          {/* LOWER LENGTHS SUMMARY BOX */}
-          <rect
-            x={tblX}
-            y={y + 189}
-            width={tblW}
-            height={28}
-            fill="#f8fafc"
-            stroke="#1e3a8a"
-            strokeWidth={0.65}
-          />
-          <text x={tblX + 5} y={y + 200} fontSize={4.9} fontWeight="700" fill="#1e3a8a">
-            Total Height: {ps.totalHeightM}m  |  Casting: {ps.castingCompleteM}m
-          </text>
-          <text x={tblX + 5} y={y + 211} fontSize={4.9} fontWeight="700" fill="#0f766e">
-            Sinking Complete: {ps.sinkingCompletedM}m  (Click to Edit)
-          </text>
+          {/* Lower Lengths & Sinking Status Summary Box (NO "Click to Edit" — Fix #6!) */}
+          {(() => {
+            const boxY = y + (compactPump ? 58 : 63) + topDownLayers.length * tblRowH + 3;
+            return (
+              <g>
+                <rect
+                  x={tblX}
+                  y={boxY}
+                  width={tblW}
+                  height={compactPump ? 24 : 27}
+                  fill="#f8fafc"
+                  stroke="#1e3a8a"
+                  strokeWidth={0.65}
+                />
+                <text x={tblX + 4} y={boxY + 9.5} fontSize={4.5} fontWeight="700" fill="#1e3a8a">
+                  Total H: {ps.totalHeightM}m | Casting: {ps.castingCompleteM}m
+                </text>
+                <text x={tblX + 4} y={boxY + (compactPump ? 19.5 : 21)} fontSize={4.6} fontWeight="700" fill={sinkVisual.badgeText}>
+                  Sinking: {ps.sinkingCompletedM}m — {ps.sinkingStatus.toUpperCase()}
+                </text>
+              </g>
+            );
+          })()}
         </g>
       </g>
     );
   };
+
+  // Shared Legend & Title Block helper (compactable for Combined sheet)
+  const renderLegendAndTitle = (
+    legX: number,
+    legY: number,
+    legW: number,
+    legH: number,
+    titleX: number,
+    titleY: number,
+    titleW: number,
+    titleH: number,
+    includeMapKey: boolean
+  ) => {
+    const compact = legW < 280;
+    const fTitle = compact ? 7.8 : 9.5;
+    const fItem = compact ? 5.9 : 7.2;
+    const rowStep = includeMapKey ? (compact ? 21 : 21) : compact ? 22 : 24;
+
+    return (
+      <g>
+        {/* COLOR LEGEND */}
+        <rect x={legX} y={legY} width={legW} height={legH} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+        <rect x={legX} y={legY} width={legW} height={20} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+        <text x={legX + legW / 2} y={legY + 13.5} textAnchor="middle" fontSize={fTitle} fontWeight="700" fill="#1e3a8a">
+          COLOR LEGEND ({viewMode.toUpperCase()})
+        </text>
+
+        {(viewMode === 'overall'
+          ? [
+              { c: colors.overallShaft, label: 'Shaft / Pump / WB Done' },
+              { c: colors.overallCasting, label: 'MH Casting / Blue WB Tip' },
+              { c: colors.overallPrecast, label: 'MH Upper Precast Ring' },
+              { c: colors.overallTunnel, label: 'Micro-Tunnelling Done' },
+              { c: '#ffffff', stroke: colors.remainingOutline, label: 'Remaining (Not Started)' },
+              ...(includeMapKey ? [{ c: '#f59e0b', label: 'On-going Work / Node' }] : []),
+            ]
+          : [
+              {
+                c: viewMode === 'weekly' ? colors.prevWeekShaft : colors.prevMonthShaft,
+                label: 'Done in File 1 (Prev)',
+              },
+              {
+                c: viewMode === 'weekly' ? colors.prevWeekManhole : colors.prevMonthManhole,
+                label: 'MH Done in File 1',
+              },
+              {
+                c: viewMode === 'weekly' ? colors.prevWeekTunnel : colors.prevMonthTunnel,
+                label: 'Tunnel Done in File 1',
+              },
+              {
+                c: currHighlight,
+                label: 'NEW PROGRESS (File 2)',
+                bold: true,
+              },
+              {
+                c: '#ffffff',
+                stroke: colors.remainingOutline,
+                label: 'Remaining Work',
+              },
+            ]
+        ).map((item, i) => (
+          <g key={item.label} transform={`translate(${legX + 8}, ${legY + 28 + i * rowStep})`}>
+            <rect
+              x={0}
+              y={0}
+              width={compact ? 14 : 18}
+              height={compact ? 10 : 12}
+              fill={item.c}
+              stroke={item.stroke || '#334155'}
+              strokeWidth={0.85}
+            />
+            <text
+              x={compact ? 19 : 25}
+              y={compact ? 8 : 9.5}
+              fontSize={fItem}
+              fontWeight={'bold' in item && item.bold ? '700' : '600'}
+              fill={'bold' in item && item.bold ? '#b45309' : '#0f172a'}
+            >
+              {item.label}
+            </text>
+          </g>
+        ))}
+
+        <g transform={`translate(${legX + 8}, ${legY + legH - 10})`}>
+          <circle cx={4} cy={-2} r={2.8} fill="#16a34a" />
+          <text x={10} y={1} fontSize={compact ? 5.4 : 6.4} fill="#334155">Complete</text>
+          <circle cx={compact ? 52 : 66} cy={-2} r={2.8} fill="#f59e0b" />
+          <text x={compact ? 58 : 72} y={1} fontSize={compact ? 5.4 : 6.4} fill="#334155">On-going</text>
+          <circle cx={compact ? 105 : 132} cy={-2} r={2.8} fill="#dc2626" />
+          <text x={compact ? 111 : 138} y={1} fontSize={compact ? 5.4 : 6.4} fill="#334155">Rem.</text>
+        </g>
+
+        {/* TITLE BLOCK */}
+        <rect x={titleX} y={titleY} width={titleW} height={titleH} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+        <rect x={titleX} y={titleY} width={titleW} height={20} fill="#1e3a8a" />
+        <text x={titleX + titleW / 2} y={titleY + 13.5} textAnchor="middle" fontSize={fTitle} fontWeight="700" fill="#ffffff">
+          PROJECT DRAWING TITLE BLOCK
+        </text>
+        {[
+          ['Client:', settings.clientName],
+          ['Contractor:', settings.contractorName],
+          ['Section:', activeSection.toUpperCase()],
+          ['Prepared:', settings.preparedBy],
+          ['Checked:', settings.checkedBy],
+          ['Date:', formatDateDisplay(settings.reportDate)],
+          ['Dwg No:', `${settings.drawingNo} (${settings.revision})`],
+          ['Sheet:', 'ISO A1 (841 x 594 mm)'],
+        ].map(([k, v], i) => {
+          const stepY = (titleH - 22) / 8;
+          return (
+            <g key={k} transform={`translate(${titleX}, ${titleY + 20 + i * stepY})`}>
+              <line x1={0} y1={stepY} x2={titleW} y2={stepY} stroke="#cbd5e1" strokeWidth={0.55} />
+              <text x={6} y={stepY * 0.68} fontSize={compact ? 5.8 : 6.7} fontWeight="700" fill="#475569">
+                {k}
+              </text>
+              <text x={compact ? 56 : 84} y={stepY * 0.68} fontSize={compact ? 6.0 : 7.0} fontWeight="600" fill="#0f172a">
+                {trunc(v, compact ? 26 : 36)}
+              </text>
+            </g>
+          );
+        })}
+      </g>
+    );
+  };
+
+  // ==================== HEADER STRIP SUBTITLE ====================
+  const sectionLabelFull =
+    activeSection === 'combined'
+      ? 'COMBINED PROGRESS REPORT (WA + WB + WC + PUMP STATION)'
+      : activeSection === 'wb'
+      ? 'WB SECTION — OPEN-CUT DN1200 GRP PIPELINE & NAVIGATION MAP'
+      : activeSection === 'wc'
+      ? 'WC SECTION — MICRO-TUNNELLING (WC-1 TO WC-27) & NAVIGATION MAP'
+      : 'WA SECTION — SHAFT, MANHOLE, MICRO-TUNNELLING & GOLAPBAG SPS';
+
+  // WB Node Status counts
+  const wbDoneCount = wbData.nodes.filter((n) => n.status === 'complete').length;
+  const wbOngoingCount = wbData.nodes.filter((n) => n.status === 'ongoing').length;
+  const wbRemCount = wbData.nodes.filter((n) => n.status === 'remaining').length;
+  const wbPrevCompletedM =
+    viewMode === 'overall' ? undefined : baseline.wbCompletedLengthM;
 
   return (
     <svg
@@ -914,955 +1556,572 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       className="print-sheet-svg w-full h-auto bg-white select-none"
       style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
     >
-      {/* Clean A1 White Page Background */}
       <rect x={0} y={0} width={SHEET_W} height={SHEET_H} fill="#ffffff" />
 
-      {/* Outer A1 Engineering Frame */}
-      <rect
-        x={12}
-        y={12}
-        width={SHEET_W - 24}
-        height={SHEET_H - 24}
-        fill="none"
-        stroke="#1e3a8a"
-        strokeWidth={1.6}
-      />
-      <rect
-        x={16}
-        y={16}
-        width={SHEET_W - 32}
-        height={SHEET_H - 32}
-        fill="none"
-        stroke="#1e3a8a"
-        strokeWidth={0.7}
-      />
+      {/* Outer A1 Frame */}
+      <rect x={12} y={12} width={SHEET_W - 24} height={SHEET_H - 24} fill="none" stroke="#1e3a8a" strokeWidth={1.6} />
+      <rect x={16} y={16} width={SHEET_W - 32} height={SHEET_H - 32} fill="none" stroke="#1e3a8a" strokeWidth={0.7} />
 
-      {/* Top Title Header Strip */}
-      <rect
-        x={16}
-        y={16}
-        width={SHEET_W - 32}
-        height={38}
-        fill="#f8fafc"
-        stroke="#1e3a8a"
-        strokeWidth={0.8}
-      />
-      <text x={28} y={33} fontSize={11.5} fontWeight="700" fill="#0f172a">
-        {settings.sectionTitle}
+      {/* Top Header Strip */}
+      <rect x={16} y={16} width={SHEET_W - 32} height={36} fill="#f8fafc" stroke="#1e3a8a" strokeWidth={0.8} />
+      <text x={28} y={32} fontSize={11.0} fontWeight="700" fill="#0f172a">
+        {sectionLabelFull}
       </text>
-      <text x={28} y={47} fontSize={7.5} fontWeight="600" fill="#475569">
-        {settings.projectTitle}  |  Total Shafts: {summary.totalShafts} (WA-01 to WA-36 incl. WA-24.1)  |  Sheet: A1 Landscape (841 x 594 mm)
+      <text x={28} y={45} fontSize={7.3} fontWeight="600" fill="#475569">
+        {settings.projectTitle}  |  Sheet: ISO A1 Landscape (841 x 594 mm)
       </text>
 
-      {/* Active Mode Banner Pill on Right */}
+      {/* Active Mode Banner Pill */}
       <rect
         x={1060}
-        y={22}
+        y={21}
         width={592}
         height={26}
         rx={3}
         fill={
-          viewMode === 'weekly'
-            ? '#fffbeb'
-            : viewMode === 'monthly'
-            ? '#ecfeff'
-            : '#f0fdf4'
+          viewMode === 'weekly' ? '#fffbeb' : viewMode === 'monthly' ? '#ecfeff' : '#f0fdf4'
         }
         stroke={
-          viewMode === 'weekly'
-            ? '#d97706'
-            : viewMode === 'monthly'
-            ? '#0891b2'
-            : '#16a34a'
+          viewMode === 'weekly' ? '#d97706' : viewMode === 'monthly' ? '#0891b2' : '#16a34a'
         }
         strokeWidth={1.1}
       />
-      <text
-        x={1356}
-        y={34}
-        textAnchor="middle"
-        fontSize={8}
-        fontWeight="700"
-        fill="#0f172a"
-      >
+      <text x={1356} y={33} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#0f172a">
         {activePeriodLabel}
       </text>
-      <text
-        x={1356}
-        y={44}
-        textAnchor="middle"
-        fontSize={6.6}
-        fontWeight="600"
-        fill="#475569"
-      >
-        Report Date: {formatDateDisplay(settings.reportDate)}  |  Drawing No: {settings.drawingNo} ({settings.revision})
+      <text x={1356} y={43} textAnchor="middle" fontSize={6.5} fontWeight="600" fill="#475569">
+        Report Date: {formatDateDisplay(settings.reportDate)} | {settings.drawingNo} ({settings.revision})
       </text>
 
-      {/* Subtle horizontal row divider guides */}
-      {[1, 2, 3].map((r) => (
-        <line
-          key={r}
-          x1={20}
-          y1={gridY + r * rowH - 3}
-          x2={SHEET_W - 20}
-          y2={gridY + r * rowH - 3}
-          stroke="#e2e8f0"
-          strokeWidth={0.7}
-          strokeDasharray="4,4"
-        />
-      ))}
-
-      {/* Render All 37 Shafts */}
-      {shafts.map((s, idx) => {
-        const col = idx % cols;
-        const row = Math.floor(idx / cols);
-        const cellX = gridX + col * colW;
-        const cellY = gridY + row * rowH;
-
-        const bSnap = baseline.shafts[s.id];
-        const shStatus = getShaftStatus(s);
-        const mhStatus = getManholeStatus(s);
-        const mtStatus = getTunnelStatus(s);
-        const shDur = calcDurationDays(s.shaftSDate, s.shaftEDate);
-        const mtDur = calcDurationDays(s.tunnelSDate, s.tunnelEDate);
-        const mhDur = calcDurationDays(s.manholeSDate, s.manholeEDate);
-        const shDoneLayers = getShaftCompletedLayersCount(s);
-
-        const isSelected = s.id === selectedShaftId;
-
-        // Cross section local coords (with 15-unit gap between tbl and left wall for W1..W13 labels!)
-        const tblW = 70 * sx;
-        const wallLeftX = 87 * sx;
-        const wallThick = 7.5 * sx;
-        const innerX = wallLeftX + wallThick;
-        const innerW = 34 * sx;
-        const wallRightX = innerX + innerW;
-        const shaftTopY = 63;
-        const wallH = 116;
-        const botSlabH = 7;
-        const layerH = wallH / s.totalLayers;
-
-        // Manhole 2 parts inside shaft interior
-        const mhW = 20 * sx;
-        const mhX = innerX + (innerW - mhW) / 2;
-        const precastY = shaftTopY + 1;
-        const precastH = 49;
-        const castingY = precastY + precastH;
-        const castingH = wallH - precastH - 2;
-
-        const mhPrevColor =
-          viewMode === 'overall'
-            ? colors.overallCasting
-            : viewMode === 'weekly'
-            ? colors.prevWeekManhole
-            : colors.prevMonthManhole;
-        const precastBaseColor =
-          viewMode === 'overall'
-            ? colors.overallPrecast
-            : viewMode === 'weekly'
-            ? colors.prevWeekManhole
-            : colors.prevMonthManhole;
-
-        const prevCastPct =
-          viewMode === 'overall'
-            ? s.castingPct
-            : Math.min(s.castingPct, bSnap?.castingPct ?? 0);
-        const currCastPct = s.castingPct;
-
-        const prevPrePct =
-          viewMode === 'overall'
-            ? s.precastPct
-            : Math.min(s.precastPct, bSnap?.precastPct ?? 0);
-        const currPrePct = s.precastPct;
-
-        const isLastInRow = col === cols - 1;
-        const isLastShaft = idx === shafts.length - 1;
-        const tunnelBarY = shaftTopY + wallH - 17;
+      {/* ===================================================================== */}
+      {/* VIEW 1: WA SECTION ONLY                                               */}
+      {/* ===================================================================== */}
+      {activeSection === 'wa' && (() => {
+        const cols = settings.layoutMode === '12col' ? 12 : 10;
+        const gridX = 46;
+        const gridY = 58;
+        const gridW = 1584;
+        const colW = gridW / cols;
+        const rowH = 232;
+        const pumpX =
+          settings.layoutMode === '12col' ? gridX + colW * 1.25 : gridX + colW * 7.25;
+        const pumpW =
+          settings.layoutMode === '12col' ? colW * 4.5 : colW * 2.75;
 
         return (
-          <g
-            key={s.id}
-            transform={`translate(${cellX}, ${cellY})`}
-            style={{ cursor: 'pointer' }}
-            onClick={() => onSelectShaft(s.id, 'shaft')}
-          >
-            {/* Selection highlight frame (excluded on export) */}
-            {isSelected && (
-              <rect
-                data-selection-ring="true"
-                x={1}
-                y={1}
-                width={colW - 2}
-                height={rowH - 8}
-                rx={4}
-                fill="#eff6ff"
-                fillOpacity={0.35}
-                stroke="#2563eb"
-                strokeWidth={1.6}
-                strokeDasharray="4,2"
+          <g>
+            {[1, 2, 3].map((r) => (
+              <line
+                key={r}
+                x1={20}
+                y1={gridY + r * rowH - 3}
+                x2={SHEET_W - 20}
+                y2={gridY + r * rowH - 3}
+                stroke="#e2e8f0"
+                strokeWidth={0.7}
+                strokeDasharray="4,4"
               />
-            )}
+            ))}
 
-            {/* Shaft Title (always dark slate in SVG so exports never look selected) */}
-            <text
-              x={colW * 0.56}
-              y={13}
-              textAnchor="middle"
-              fontSize={9.6 * Math.max(0.88, sx)}
-              fontWeight="700"
-              fill="#0f172a"
-            >
-              Shaft {s.id}
-            </text>
+            {renderShaftGrid(waShafts, baseline.shafts, {
+              cols,
+              gridX,
+              gridY,
+              gridW,
+              rowH,
+              connectLastToPump: true,
+              pumpStructAbsX: pumpX + 6,
+            })}
 
-            {/* Layer progress mini badge top-right */}
-            <text
-              x={colW - 4}
-              y={12}
-              textAnchor="end"
-              fontSize={5.2}
-              fontWeight="700"
-              fill={statusBadgeColor(shStatus)}
-            >
-              L:{shDoneLayers}/{s.totalLayers}
-            </text>
+            {settings.showPumpStation &&
+              renderPumpStation(pumpStation, pumpX, gridY + rowH * 3 + 4, pumpW, 224)}
 
-            {/* --- LEFT DESCRIPTIONS & STATUS TABLES --- */}
-            <g transform="translate(2, 18)">
-              <text
-                x={tblW / 2}
-                y={5}
-                textAnchor="middle"
-                fontSize={5.2}
-                fontWeight="700"
-                fill="#1e3a8a"
-                textDecoration="underline"
-              >
-                Shaft Descriptions:
+            {/* WA Bottom Footer */}
+            <g transform="translate(16, 996)">
+              <rect x={6} y={0} width={924} height={168} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+              <rect x={6} y={0} width={924} height={22} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+              <text x={468} y={15} textAnchor="middle" fontSize={10.5} fontWeight="700" fill="#1e3a8a">
+                WA SECTION - PROGRESS SUMMARY
               </text>
-              <rect
-                x={0}
-                y={7}
-                width={tblW}
-                height={36}
-                fill="#ffffff"
-                stroke="#1e3a8a"
-                strokeWidth={0.65}
-              />
-              <line x1={30 * sx} y1={7} x2={30 * sx} y2={43} stroke="#1e3a8a" strokeWidth={0.5} />
-              {[1, 2, 3].map((r) => (
-                <line
-                  key={r}
-                  x1={0}
-                  y1={7 + r * 9}
-                  x2={tblW}
-                  y2={7 + r * 9}
-                  stroke="#1e3a8a"
-                  strokeWidth={0.5}
-                />
-              ))}
-              <text x={2} y={13.5} fontSize={4.5} fill="#1e3a8a">Shaft Size</text>
-              <text x={30 * sx + (tblW - 30 * sx) / 2} y={13.5} textAnchor="middle" fontSize={5.0} fontWeight="600" fill="#0f172a">{s.shaftSize}</text>
+              <line x1={270} y1={22} x2={270} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
+              <line x1={550} y1={22} x2={550} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
 
-              <text x={2} y={22.5} fontSize={4.5} fill="#1e3a8a">Type</text>
-              <text x={30 * sx + (tblW - 30 * sx) / 2} y={22.5} textAnchor="middle" fontSize={4.6} fontWeight="600" fill="#0f172a">{trunc(s.shaftType, 14)}</text>
-
-              <text x={2} y={31.5} fontSize={4.5} fill="#1e3a8a">Net Height</text>
-              <text x={30 * sx + (tblW - 30 * sx) / 2} y={31.5} textAnchor="middle" fontSize={5.0} fontWeight="600" fill="#0f172a">{s.netHeightMm}</text>
-
-              <text x={2} y={40.5} fontSize={4.5} fill="#1e3a8a">Bot. Slab</text>
-              <text x={30 * sx + (tblW - 30 * sx) / 2} y={40.5} textAnchor="middle" fontSize={5.0} fontWeight="600" fill="#0f172a">{s.bottomSlabMm}</text>
-
-              {/* Construction Status Table */}
-              <text
-                x={tblW / 2}
-                y={50}
-                textAnchor="middle"
-                fontSize={5.2}
-                fontWeight="700"
-                fill="#1e3a8a"
-                textDecoration="underline"
-              >
-                Construction Status
+              <text x={138} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                SHAFT PROGRESS (WA-01 to WA-36 + 24.1)
               </text>
-              <rect
-                x={0}
-                y={52}
-                width={tblW}
-                height={81}
-                fill="#ffffff"
-                stroke="#1e3a8a"
-                strokeWidth={0.65}
-              />
-              <line x1={11.5 * sx} y1={52} x2={11.5 * sx} y2={133} stroke="#1e3a8a" strokeWidth={0.5} />
-              <line x1={30 * sx} y1={52} x2={30 * sx} y2={133} stroke="#1e3a8a" strokeWidth={0.5} />
+              <text x={20} y={55} fontSize={7.6} fill="#0f172a">TOTAL SHAFT</text>
+              <text x={252} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {waSummary.totalShafts} Nos</text>
+              <text x={20} y={71} fontSize={7.6} fill="#15803d" fontWeight="600">COMPLETED SHAFT</text>
+              <text x={252} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#15803d">: {String(waSummary.completedShafts).padStart(2, '0')} Nos</text>
+              <text x={20} y={87} fontSize={7.6} fill="#b45309" fontWeight="600">ON-GOING SHAFT</text>
+              <text x={252} y={87} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#b45309">: {String(waSummary.ongoingShafts).padStart(2, '0')} Nos</text>
+              <text x={20} y={103} fontSize={7.6} fill="#dc2626">REMAINING SHAFT</text>
+              <text x={252} y={103} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#dc2626">: {String(waSummary.remainingShafts).padStart(2, '0')} Nos</text>
 
-              {[
-                {
-                  name: 'Shaft',
-                  y: 52,
-                  st: shStatus,
-                  sD: formatDateDisplay(s.shaftSDate),
-                  eD: s.shaftEDate ? formatDateDisplay(s.shaftEDate) : shStatus === 'ongoing' ? 'On-going' : '',
-                  dur: shDur !== null ? `${shDur} Days` : shStatus === 'ongoing' ? 'On-going' : 'Rem.',
-                },
-                {
-                  name: 'Tunnel',
-                  y: 79,
-                  st: mtStatus,
-                  sD: formatDateDisplay(s.tunnelSDate),
-                  eD: s.tunnelEDate ? formatDateDisplay(s.tunnelEDate) : mtStatus === 'ongoing' ? 'On-going' : '',
-                  dur: mtDur !== null ? `${mtDur} Days` : mtStatus === 'ongoing' ? 'On-going' : 'Rem.',
-                },
-                {
-                  name: 'Manhole',
-                  y: 106,
-                  st: mhStatus,
-                  sD: formatDateDisplay(s.manholeSDate),
-                  eD: s.manholeEDate ? formatDateDisplay(s.manholeEDate) : mhStatus === 'ongoing' ? 'On-going' : '',
-                  dur: mhDur !== null ? `${mhDur} Days` : mhStatus === 'ongoing' ? 'On-going' : 'Rem.',
-                },
-              ].map((grp, gi) => (
-                <g key={grp.name}>
-                  {gi > 0 && (
-                    <line x1={0} y1={grp.y} x2={tblW} y2={grp.y} stroke="#1e3a8a" strokeWidth={0.75} />
-                  )}
-                  <rect x={0.5} y={grp.y + 0.5} width={2.8} height={26} fill={statusBadgeColor(grp.st)} />
-                  <line x1={11.5 * sx} y1={grp.y + 9} x2={tblW} y2={grp.y + 9} stroke="#94a3b8" strokeWidth={0.4} />
-                  <line x1={11.5 * sx} y1={grp.y + 18} x2={tblW} y2={grp.y + 18} stroke="#94a3b8" strokeWidth={0.4} />
-
-                  <text
-                    x={7.2 * sx}
-                    y={grp.y + 13.5}
-                    textAnchor="middle"
-                    fontSize={4.3}
-                    fontWeight="700"
-                    fill="#1e3a8a"
-                    transform={`rotate(-90, ${7.2 * sx}, ${grp.y + 13.5})`}
-                  >
-                    {grp.name}
+              {viewMode === 'overall' ? (
+                <g>
+                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.7} />
+                  <text x={24} y={127} fontSize={6.8} fontWeight="700" fill="#166534">PUMP STATION (GOLAPBAG SPS):</text>
+                  <text x={24} y={139} fontSize={6.6} fill="#0f172a">
+                    - Lower: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Layers | Sinking: {pumpStation.sinkingCompletedM}m [{pumpStation.sinkingStatus.toUpperCase()}]
                   </text>
-
-                  <text x={13 * sx} y={grp.y + 6.5} fontSize={4.2} fill="#334155">S.Date</text>
-                  <text x={30 * sx + (tblW - 30 * sx) / 2} y={grp.y + 6.5} textAnchor="middle" fontSize={4.7} fill="#0f172a">{grp.sD}</text>
-
-                  <text x={13 * sx} y={grp.y + 15.5} fontSize={4.2} fill="#334155">E.Date</text>
-                  <text
-                    x={30 * sx + (tblW - 30 * sx) / 2}
-                    y={grp.y + 15.5}
-                    textAnchor="middle"
-                    fontSize={4.6}
-                    fontWeight={grp.eD === 'On-going' ? '700' : '400'}
-                    fill={grp.eD === 'On-going' ? '#d97706' : '#0f172a'}
-                  >
-                    {grp.eD}
-                  </text>
-
-                  <text x={13 * sx} y={grp.y + 24.5} fontSize={4.2} fill="#334155">Dur.</text>
-                  <text
-                    x={30 * sx + (tblW - 30 * sx) / 2}
-                    y={grp.y + 24.5}
-                    textAnchor="middle"
-                    fontSize={4.5}
-                    fontWeight="700"
-                    fill={
-                      grp.st === 'complete'
-                        ? '#15803d'
-                        : grp.st === 'ongoing'
-                        ? '#b45309'
-                        : '#94a3b8'
-                    }
-                  >
-                    {grp.dur}
+                  <text x={24} y={151} fontSize={6.6} fontWeight="700" fill="#1e3a8a">
+                    - Machine Room: {pumpStation.machineRoom.status.toUpperCase()}
                   </text>
                 </g>
-              ))}
-            </g>
+              ) : (
+                <g>
+                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
+                  <text x={24} y={129} fontSize={7} fontWeight="700" fill="#92400e">
+                    {viewMode === 'weekly' ? 'WEEKLY DELTA (FILE 2 vs FILE 1):' : 'MONTHLY DELTA (FILE 2 vs FILE 1):'}
+                  </text>
+                  <text x={24} y={142} fontSize={7} fill="#78350f">- Shaft Layers Added: +{waSummary.delta.addedLayers} layers</text>
+                  <text x={24} y={153} fontSize={7} fill="#78350f">- Shafts Completed: +{waSummary.delta.addedShaftsCompleted} Nos</text>
+                </g>
+              )}
 
-            {/* --- RIGHT CROSS SECTION DIAGRAM --- */}
-            {/* Road Level datum */}
-            <line
-              x1={wallLeftX - 5}
-              y1={shaftTopY}
-              x2={wallRightX + wallThick + 10}
-              y2={shaftTopY}
-              stroke="#475569"
-              strokeWidth={0.7}
-            />
-            <polygon
-              points={`${innerX + innerW / 2 - 3},${shaftTopY - 4} ${innerX + innerW / 2 + 3},${shaftTopY - 4} ${innerX + innerW / 2},${shaftTopY}`}
-              fill="#64748b"
-            />
-            <text
-              x={innerX + innerW / 2 + 5}
-              y={shaftTopY - 2}
-              fontSize={5.0}
-              fontWeight="700"
-              fill="#334155"
-            >
-              Road Level
+              <text x={410} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                MANHOLE PROGRESS (CASTING + PRECAST)
+              </text>
+              <text x={284} y={55} fontSize={7.6} fill="#0f172a">TOTAL MANHOLE</text>
+              <text x={536} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {waSummary.totalManholes} Nos</text>
+              <text x={284} y={71} fontSize={7.6} fill="#15803d" fontWeight="600">COMPLETED (BOTH PARTS)</text>
+              <text x={536} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#15803d">: {String(waSummary.completedManholes).padStart(2, '0')} Nos</text>
+              <text x={284} y={87} fontSize={7.6} fill="#b45309" fontWeight="600">ON-GOING MANHOLE</text>
+              <text x={536} y={87} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#b45309">: {String(waSummary.ongoingManholes).padStart(2, '0')} Nos</text>
+              <text x={284} y={103} fontSize={7.6} fill="#1d4ed8">- Lower Casting Complete</text>
+              <text x={536} y={103} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#1d4ed8">: {String(waSummary.castingCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={119} fontSize={7.6} fill="#0284c7">- Upper Precast Ring Complete</text>
+              <text x={536} y={119} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0284c7">: {String(waSummary.precastCompleteCount).padStart(2, '0')} Nos</text>
+
+              <text x={740} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                MICRO-TUNNELLING PROGRESS
+              </text>
+              <text x={564} y={55} fontSize={7.6} fontWeight="700" fill="#0f172a">TOTAL LENGTH</text>
+              <text x={914} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {(waSummary.totalTunnelLengthM / 1000).toFixed(3)} km</text>
+              <text x={564} y={71} fontSize={7.6} fontWeight="700" fill="#a21caf">COMPLETED LENGTH</text>
+              <text x={914} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#a21caf">: {(waSummary.completedTunnelLengthM / 1000).toFixed(3)} km ({waSummary.tunnelPctOverall.toFixed(1)}%)</text>
+              <text x={564} y={91} fontSize={7.2} fill="#334155">1. DN 900  (Total: {(waSummary.byDia.DN900.totalM / 1000).toFixed(3)} km)</text>
+              <text x={914} y={91} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(waSummary.byDia.DN900.completedM / 1000).toFixed(3)} km</text>
+              <text x={564} y={107} fontSize={7.2} fill="#334155">2. DN 1100 (Total: {(waSummary.byDia.DN1100.totalM / 1000).toFixed(3)} km)</text>
+              <text x={914} y={107} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(waSummary.byDia.DN1100.completedM / 1000).toFixed(3)} km</text>
+              <text x={564} y={123} fontSize={7.2} fill="#334155">3. DN 1600 (Total: {(waSummary.byDia.DN1600.totalM / 1000).toFixed(3)} km)</text>
+              <text x={914} y={123} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(waSummary.byDia.DN1600.completedM / 1000).toFixed(3)} km</text>
+
+              {viewMode !== 'overall' && (
+                <g>
+                  <rect x={562} y={133} width={354} height={24} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
+                  <text x={739} y={148} textAnchor="middle" fontSize={7.4} fontWeight="700" fill="#92400e">
+                    {viewMode === 'weekly' ? 'WEEKLY TUNNEL ADDED: ' : 'MONTHLY TUNNEL ADDED: '}
+                    +{waSummary.delta.addedTunnelM.toFixed(1)} m ({(waSummary.delta.addedTunnelM / 1000).toFixed(3)} km)
+                  </text>
+                </g>
+              )}
+
+              {renderLegendAndTitle(938, 0, 374, 168, 1320, 0, 324, 168, false)}
+            </g>
+          </g>
+        );
+      })()}
+
+      {/* ===================================================================== */}
+      {/* VIEW 2: WB SECTION PAGE (OPEN CUT + STREET NAVIGATION MAP + 38 NODES) */}
+      {/* ===================================================================== */}
+      {activeSection === 'wb' && (
+        <g>
+          <WbNavigationMapGroup
+            wb={wbData}
+            x={22}
+            y={58}
+            w={950}
+            h={926}
+            settings={settings}
+            viewMode={viewMode}
+            prevCompletedLengthM={wbPrevCompletedM}
+            highlightColor={currHighlight}
+            selectedNodeId={selectedShaftId}
+            onSelectNode={(id) => onSelectWbNode?.(id)}
+            compact={false}
+            clipIdSuffix="wb-page"
+          />
+
+          {/* Right Panel: WB Node Status Register (WB1..WB38 in 2 crisp 19-row columns) */}
+          <g transform="translate(984, 58)">
+            <rect x={0} y={0} width={676} height={926} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+            <rect x={0} y={0} width={676} height={26} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+            <text x={338} y={17} textAnchor="middle" fontSize={10} fontWeight="700" fill="#1e3a8a">
+              WB NODE ALIGNMENT SCHEDULE (WB1 TO WB38 — CLICK NODE TO EDIT)
             </text>
 
-            {/* Shaft Outer Lip */}
-            <rect
-              x={wallLeftX - 2.5}
-              y={shaftTopY}
-              width={wallThick + 2.5}
-              height={3}
-              fill={getLayerFill(s, 0, bSnap) ?? '#ffffff'}
-              stroke={getLayerFill(s, 0, bSnap) ? '#14532d' : colors.remainingOutline}
-              strokeWidth={0.5}
-            />
-            <rect
-              x={wallRightX}
-              y={shaftTopY}
-              width={wallThick + 2.5}
-              height={3}
-              fill={getLayerFill(s, 0, bSnap) ?? '#ffffff'}
-              stroke={getLayerFill(s, 0, bSnap) ? '#14532d' : colors.remainingOutline}
-              strokeWidth={0.5}
-            />
-
-            {/* Dynamic W1..WN Shaft Layers (6 to 13) — Labels placed cleanly on LEFT of left wall so Tunnel bar NEVER overlaps! */}
-            {Array.from({ length: s.totalLayers }).map((_, li) => {
-              const ly = shaftTopY + li * layerH;
-              const fill = getLayerFill(s, li, bSnap);
-              const stroke = fill ? '#14532d' : colors.remainingOutline;
+            {[0, 1].map((colIdx) => {
+              const slice = wbData.nodes.slice(colIdx * 19, (colIdx + 1) * 19);
+              const bx = 8 + colIdx * 334;
+              const bw = 326;
               return (
-                <g key={li}>
-                  <rect
-                    x={wallLeftX}
-                    y={ly}
-                    width={wallThick}
-                    height={Math.max(2, layerH - 0.5)}
-                    fill={fill ?? '#ffffff'}
-                    stroke={stroke}
-                    strokeWidth={0.55}
-                  />
-                  <rect
-                    x={wallRightX}
-                    y={ly}
-                    width={wallThick}
-                    height={Math.max(2, layerH - 0.5)}
-                    fill={fill ?? '#ffffff'}
-                    stroke={stroke}
-                    strokeWidth={0.55}
-                  />
-                  <text
-                    x={wallLeftX - 2.2}
-                    y={ly + layerH * 0.68}
-                    textAnchor="end"
-                    fontSize={s.totalLayers >= 11 ? 4.3 : 4.8}
-                    fontWeight="700"
-                    fill={fill ? '#15803d' : '#dc2626'}
-                  >
-                    W{li + 1}
-                  </text>
+                <g key={colIdx} transform={`translate(${bx}, 34)`}>
+                  <rect x={0} y={0} width={bw} height={22} fill="#1e3a8a" />
+                  <text x={24} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">Node</text>
+                  <text x={78} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">Chainage</text>
+                  <text x={144} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">S. Date</text>
+                  <text x={212} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">E. Date</text>
+                  <text x={286} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">Status</text>
+
+                  {slice.map((n, ri) => {
+                    const ry = 22 + ri * 45.2;
+                    const isSel = selectedShaftId === n.id;
+                    const badgeFill =
+                      n.status === 'complete' ? '#dcfce7' : n.status === 'ongoing' ? '#fef3c7' : '#fee2e2';
+                    const badgeTxt =
+                      n.status === 'complete' ? '#15803d' : n.status === 'ongoing' ? '#b45309' : '#dc2626';
+                    return (
+                      <g
+                        key={n.id}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => onSelectWbNode?.(n.id)}
+                      >
+                        <rect
+                          x={0}
+                          y={ry}
+                          width={bw}
+                          height={45.2}
+                          fill={isSel ? '#eff6ff' : ri % 2 === 0 ? '#ffffff' : '#f8fafc'}
+                          stroke={isSel ? '#2563eb' : '#cbd5e1'}
+                          strokeWidth={isSel ? 1.4 : 0.6}
+                        />
+                        <text x={24} y={ry + 25} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#0f172a">
+                          {n.id}
+                        </text>
+                        <text x={78} y={ry + 25} textAnchor="middle" fontSize={7.8} fontWeight="600" fill="#334155">
+                          {n.chainageM.toFixed(1)} m
+                        </text>
+                        <text x={144} y={ry + 25} textAnchor="middle" fontSize={7.0} fill="#334155">
+                          {formatDateDisplay(n.sDate) || '-'}
+                        </text>
+                        <text x={212} y={ry + 25} textAnchor="middle" fontSize={7.0} fill="#334155">
+                          {formatDateDisplay(n.eDate) || '-'}
+                        </text>
+                        <rect
+                          x={248}
+                          y={ry + 12}
+                          width={72}
+                          height={20}
+                          rx={3}
+                          fill={badgeFill}
+                          stroke={badgeTxt}
+                          strokeWidth={0.6}
+                        />
+                        <text x={284} y={ry + 25} textAnchor="middle" fontSize={7.2} fontWeight="700" fill={badgeTxt}>
+                          {n.status.toUpperCase()}
+                        </text>
+                      </g>
+                    );
+                  })}
                 </g>
               );
             })}
+          </g>
 
-            {s.sheetPileStyle &&
-              [0.24, 0.52, 0.78].map((frac, si) => (
-                <line
-                  key={si}
-                  x1={wallLeftX}
-                  y1={shaftTopY + wallH * frac}
-                  x2={wallRightX + wallThick}
-                  y2={shaftTopY + wallH * frac}
-                  stroke="#ca8a04"
-                  strokeWidth={1.3}
-                />
-              ))}
+          {/* WB Page Footer */}
+          <g transform="translate(16, 996)">
+            <rect x={6} y={0} width={924} height={168} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+            <rect x={6} y={0} width={924} height={22} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+            <text x={468} y={15} textAnchor="middle" fontSize={10.5} fontWeight="700" fill="#1e3a8a">
+              WB SECTION (OPEN CUT {wbData.pipeDia}) — PROGRESS SUMMARY
+            </text>
+            <line x1={468} y1={22} x2={468} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
 
-            {/* Bottom Slab */}
-            {(() => {
-              const bFill = getBottomSlabFill(s, bSnap);
-              return (
-                <rect
-                  x={wallLeftX}
-                  y={shaftTopY + wallH}
-                  width={wallThick * 2 + innerW}
-                  height={botSlabH}
-                  fill={bFill ?? '#ffffff'}
-                  stroke={bFill ? '#14532d' : colors.remainingOutline}
-                  strokeWidth={0.65}
-                />
-              );
-            })()}
+            <text x={26} y={50} fontSize={9.0} fontWeight="700" fill="#0f172a">TOTAL PIPELINE LENGTH</text>
+            <text x={440} y={50} textAnchor="end" fontSize={9.5} fontWeight="700" fill="#0f172a">
+              : {(wbData.totalLengthM / 1000).toFixed(3)} km ({wbData.totalLengthM} m)
+            </text>
+            <text x={26} y={76} fontSize={9.0} fontWeight="700" fill="#15803d">COMPLETED LENGTH (WITH BLUE TIP)</text>
+            <text x={440} y={76} textAnchor="end" fontSize={9.5} fontWeight="700" fill="#15803d">
+              : {(wbData.completedLengthM / 1000).toFixed(3)} km ({wbData.completedLengthM.toFixed(1)} m)
+            </text>
+            <text x={26} y={102} fontSize={9.0} fontWeight="700" fill="#dc2626">REMAINING LENGTH</text>
+            <text x={440} y={102} textAnchor="end" fontSize={9.5} fontWeight="700" fill="#dc2626">
+              : {(Math.max(0, wbData.totalLengthM - wbData.completedLengthM) / 1000).toFixed(3)} km ({Math.max(0, wbData.totalLengthM - wbData.completedLengthM).toFixed(1)} m)
+            </text>
+            <text x={26} y={128} fontSize={8.5} fontWeight="700" fill="#2563eb">COMPLETION PERCENTAGE</text>
+            <text x={440} y={128} textAnchor="end" fontSize={9.0} fontWeight="700" fill="#2563eb">
+              : {wbData.totalLengthM > 0 ? ((wbData.completedLengthM / wbData.totalLengthM) * 100).toFixed(1) : '0.0'} %
+            </text>
 
-            {/* --- MANHOLE (2 PARTS: UPPER PRECAST RING + LOWER CASTING) --- */}
-            <g
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectShaft(s.id, 'manhole');
-              }}
-            >
-              {/* UPPER PART: PRECAST RING */}
-              <rect
-                x={mhX + 3 * sx}
-                y={precastY}
-                width={mhW - 6 * sx}
-                height={precastH}
-                fill="#ffffff"
-                stroke={currPrePct > 0 ? '#0369a1' : colors.remainingOutline}
-                strokeWidth={0.65}
-              />
-              {prevPrePct > 0 && (
-                <rect
-                  x={mhX + 3 * sx + 0.4}
-                  y={precastY + precastH * (1 - prevPrePct / 100)}
-                  width={mhW - 6 * sx - 0.8}
-                  height={precastH * (prevPrePct / 100)}
-                  fill={precastBaseColor}
-                  fillOpacity={0.85}
-                />
-              )}
-              {viewMode !== 'overall' && currPrePct > prevPrePct && (
-                <rect
-                  x={mhX + 3 * sx + 0.4}
-                  y={precastY + precastH * (1 - currPrePct / 100)}
-                  width={mhW - 6 * sx - 0.8}
-                  height={precastH * ((currPrePct - prevPrePct) / 100)}
-                  fill={currHighlight}
-                />
-              )}
-              {[0.25, 0.5, 0.75].map((f) => (
-                <line
-                  key={f}
-                  x1={mhX + 3 * sx}
-                  y1={precastY + precastH * f}
-                  x2={mhX + mhW - 3 * sx}
-                  y2={precastY + precastH * f}
-                  stroke={currPrePct > 0 ? '#ffffff' : colors.remainingOutline}
-                  strokeWidth={0.55}
-                />
-              ))}
+            <text x={490} y={50} fontSize={9.0} fontWeight="700" fill="#0f172a">TOTAL NODES</text>
+            <text x={904} y={50} textAnchor="end" fontSize={9.5} fontWeight="700" fill="#0f172a">: {wbData.nodes.length} Nos (WB1–WB38)</text>
+            <text x={490} y={76} fontSize={9.0} fontWeight="700" fill="#15803d">COMPLETE NODES</text>
+            <text x={904} y={76} textAnchor="end" fontSize={9.5} fontWeight="700" fill="#15803d">: {wbDoneCount} Nos</text>
+            <text x={490} y={102} fontSize={9.0} fontWeight="700" fill="#b45309">ON-GOING NODES</text>
+            <text x={904} y={102} textAnchor="end" fontSize={9.5} fontWeight="700" fill="#b45309">: {wbOngoingCount} Nos</text>
+            <text x={490} y={128} fontSize={9.0} fontWeight="700" fill="#dc2626">REMAINING NODES</text>
+            <text x={904} y={128} textAnchor="end" fontSize={9.5} fontWeight="700" fill="#dc2626">: {wbRemCount} Nos</text>
 
-              {/* LOWER PART: IN-SITU CASTING */}
-              <rect
-                x={mhX}
-                y={castingY}
-                width={mhW}
-                height={castingH}
-                fill="#ffffff"
-                stroke={currCastPct > 0 ? '#1e3a8a' : colors.remainingOutline}
+            {renderLegendAndTitle(938, 0, 374, 168, 1320, 0, 324, 168, true)}
+          </g>
+        </g>
+      )}
+
+      {/* ===================================================================== */}
+      {/* VIEW 3: WC SECTION PAGE (27 SHAFTS SAME AS WA + WC NAVIGATION MAP)   */}
+      {/* ===================================================================== */}
+      {activeSection === 'wc' && (() => {
+        const cols = 10;
+        const gridX = 46;
+        const gridY = 56;
+        const gridW = 1584;
+        const rowH = 220;
+        const wcBaseMap = baseline.wcShafts || {};
+
+        return (
+          <g>
+            {[1, 2].map((r) => (
+              <line
+                key={r}
+                x1={20}
+                y1={gridY + r * rowH - 3}
+                x2={SHEET_W - 20}
+                y2={gridY + r * rowH - 3}
+                stroke="#e2e8f0"
                 strokeWidth={0.7}
+                strokeDasharray="4,4"
               />
-              {prevCastPct > 0 && (
-                <rect
-                  x={mhX + 0.4}
-                  y={castingY + castingH * (1 - prevCastPct / 100)}
-                  width={mhW - 0.8}
-                  height={castingH * (prevCastPct / 100)}
-                  fill={mhPrevColor}
-                />
-              )}
-              {viewMode !== 'overall' && currCastPct > prevCastPct && (
-                <rect
-                  x={mhX + 0.4}
-                  y={castingY + castingH * (1 - currCastPct / 100)}
-                  width={mhW - 0.8}
-                  height={castingH * ((currCastPct - prevCastPct) / 100)}
-                  fill={currHighlight}
-                />
-              )}
-              <rect
-                x={mhX + 3.2 * sx}
-                y={castingY + 3.5}
-                width={mhW - 6.4 * sx}
-                height={castingH - 7}
-                fill="#ffffff"
-                fillOpacity={0.88}
-                stroke={currCastPct > 0 ? '#1e3a8a' : colors.remainingOutline}
-                strokeWidth={0.5}
-              />
-              {[0.2, 0.35, 0.5, 0.65, 0.8].map((f) => (
-                <line
-                  key={f}
-                  x1={mhX + 4.5 * sx}
-                  y1={castingY + 3.5 + (castingH - 7) * f}
-                  x2={mhX + mhW - 4.5 * sx}
-                  y2={castingY + 3.5 + (castingH - 7) * f}
-                  stroke="#dc2626"
-                  strokeWidth={0.45}
-                  strokeDasharray="2,1.5"
-                />
-              ))}
+            ))}
+
+            {renderShaftGrid(wcData.shafts, wcBaseMap, {
+              cols,
+              gridX,
+              gridY,
+              gridW,
+              rowH,
+              connectLastToPump: false,
+            })}
+
+            {/* WC Navigation Map right below 27 shafts (y=720..988) */}
+            <WcNavigationMapGroup
+              wc={wcData}
+              x={22}
+              y={720}
+              w={1638}
+              h={268}
+              settings={settings}
+              selectedShaftId={selectedShaftId}
+              onSelectShaft={(id) => onSelectShaft(id, 'shaft')}
+              compact={false}
+              clipIdSuffix="wc-page"
+            />
+
+            {/* WC Page Footer */}
+            <g transform="translate(16, 996)">
+              <rect x={6} y={0} width={924} height={168} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+              <rect x={6} y={0} width={924} height={22} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+              <text x={468} y={15} textAnchor="middle" fontSize={10.5} fontWeight="700" fill="#1e3a8a">
+                WC SECTION (MICRO-TUNNELLING WC-1 TO WC-27) — PROGRESS SUMMARY
+              </text>
+              <line x1={300} y1={22} x2={300} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
+              <line x1={610} y1={22} x2={610} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
+
+              <text x={152} y={40} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                WC SHAFT PROGRESS
+              </text>
+              <text x={22} y={64} fontSize={8.0} fill="#0f172a">TOTAL SHAFTS</text>
+              <text x={280} y={64} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#0f172a">: {wcSummary.totalShafts} Nos</text>
+              <text x={22} y={86} fontSize={8.0} fill="#15803d" fontWeight="600">COMPLETED SHAFTS</text>
+              <text x={280} y={86} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#15803d">: {wcSummary.completedShafts} Nos</text>
+              <text x={22} y={108} fontSize={8.0} fill="#b45309" fontWeight="600">ON-GOING SHAFTS</text>
+              <text x={280} y={108} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#b45309">: {wcSummary.ongoingShafts} Nos</text>
+              <text x={22} y={130} fontSize={8.0} fill="#dc2626">REMAINING SHAFTS</text>
+              <text x={280} y={130} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#dc2626">: {wcSummary.remainingShafts} Nos</text>
+
+              <text x={455} y={40} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                WC MANHOLE PROGRESS
+              </text>
+              <text x={320} y={64} fontSize={8.0} fill="#0f172a">TOTAL MANHOLES</text>
+              <text x={592} y={64} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#0f172a">: {wcSummary.totalManholes} Nos</text>
+              <text x={320} y={86} fontSize={8.0} fill="#15803d">COMPLETED</text>
+              <text x={592} y={86} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#15803d">: {wcSummary.completedManholes} Nos</text>
+              <text x={320} y={108} fontSize={8.0} fill="#1d4ed8">CASTING / PRECAST</text>
+              <text x={592} y={108} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#1d4ed8">: {wcSummary.castingCompleteCount} / {wcSummary.precastCompleteCount} Nos</text>
+
+              <text x={765} y={40} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                WC MICRO-TUNNELLING
+              </text>
+              <text x={626} y={64} fontSize={8.0} fontWeight="700" fill="#0f172a">TOTAL LENGTH</text>
+              <text x={912} y={64} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#0f172a">: {(wcSummary.totalTunnelLengthM / 1000).toFixed(3)} km</text>
+              <text x={626} y={86} fontSize={8.0} fontWeight="700" fill="#a21caf">COMPLETED</text>
+              <text x={912} y={86} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#a21caf">: {(wcSummary.completedTunnelLengthM / 1000).toFixed(3)} km ({wcSummary.tunnelPctOverall.toFixed(1)}%)</text>
+              <text x={626} y={110} fontSize={7.3} fill="#334155">DN1800: {(wcSummary.byDia.DN1800.completedM / 1000).toFixed(3)} / {(wcSummary.byDia.DN1800.totalM / 1000).toFixed(3)} km</text>
+              <text x={626} y={127} fontSize={7.3} fill="#334155">DN2400: {(wcSummary.byDia.DN2400.completedM / 1000).toFixed(3)} / {(wcSummary.byDia.DN2400.totalM / 1000).toFixed(3)} km</text>
+              <text x={626} y={144} fontSize={7.3} fill="#334155">DN2600: {(wcSummary.byDia.DN2600.completedM / 1000).toFixed(3)} / {(wcSummary.byDia.DN2600.totalM / 1000).toFixed(3)} km</text>
+
+              {renderLegendAndTitle(938, 0, 374, 168, 1320, 0, 324, 168, true)}
             </g>
-
-            {/* --- TUNNEL CONNECTION BAR TO NEXT SHAFT --- */}
-            {!isLastInRow && !isLastShaft && (() => {
-              const barStart = wallRightX + wallThick;
-              const barEnd = colW + wallLeftX - 11; // Leaves 11u clear for next shaft's W10-W13 labels!
-              return (
-                <g>
-                  <line
-                    x1={barEnd}
-                    y1={tunnelBarY + 7}
-                    x2={colW + wallLeftX}
-                    y2={tunnelBarY + 7}
-                    stroke="#1e3a8a"
-                    strokeWidth={1.1}
-                    strokeDasharray="2,1"
-                  />
-                  {renderTunnelBar(
-                    s,
-                    barStart,
-                    tunnelBarY,
-                    barEnd - barStart,
-                    10,
-                    100,
-                    'full'
-                  )}
-                </g>
-              );
-            })()}
-
-            {/* Exiting 10%..50% bar at right end of row */}
-            {isLastInRow && !isLastShaft &&
-              renderTunnelBar(
-                s,
-                wallRightX + wallThick,
-                tunnelBarY,
-                colW - (wallRightX + wallThick) + 32,
-                10,
-                50,
-                'exit'
-              )}
-
-            {/* Incoming 60%..100% bar at left start of row > 0 */}
-            {col === 0 && row > 0 && idx > 0 && (() => {
-              const barStart = -28;
-              const barEnd = wallLeftX - 11;
-              return (
-                <g>
-                  <line
-                    x1={barEnd}
-                    y1={tunnelBarY + 7}
-                    x2={wallLeftX}
-                    y2={tunnelBarY + 7}
-                    stroke="#1e3a8a"
-                    strokeWidth={1.1}
-                    strokeDasharray="2,1"
-                  />
-                  {renderTunnelBar(
-                    shafts[idx - 1],
-                    barStart,
-                    tunnelBarY,
-                    barEnd - barStart,
-                    60,
-                    100,
-                    'entry'
-                  )}
-                </g>
-              );
-            })()}
-
-            {/* Last Shaft (WA-36 -> Pump Station) */}
-            {isLastShaft &&
-              renderTunnelBar(
-                s,
-                wallRightX + wallThick,
-                tunnelBarY,
-                settings.showPumpStation
-                  ? settings.layoutMode === '12col'
-                    ? colW * 1.25 - (wallRightX + wallThick) + 4
-                    : colW - (wallRightX + wallThick) + colW * 0.56 + 4
-                  : 96 * sx,
-                10,
-                100,
-                'pump'
-              )}
           </g>
         );
-      })}
+      })()}
 
-      {/* Pump Station in Row 4 */}
-      {settings.showPumpStation &&
-        renderPumpStation(
-          pumpStation,
-          settings.layoutMode === '12col'
-            ? gridX + colW * 1.25
-            : gridX + colW * 7.56,
-          gridY + rowH * 3 + 4,
-          settings.layoutMode === '12col' ? colW * 4.5 : colW * 2.44
-        )}
+      {/* ===================================================================== */}
+      {/* VIEW 4: COMBINED ONE-PAGE A1 SHEET (WA TOP + WB RIGHT + WC BELOW WB) */}
+      {/* ===================================================================== */}
+      {activeSection === 'combined' && (() => {
+        const cols = 11;
+        const gridX = 46;
+        const gridY = 55;
+        const gridW = 1584;
+        const colW = gridW / cols; // 144
+        const rowH = 216; // Rows 1..4 end at 55 + 4*216 = 919!
+        // WA-36 is idx=36 -> col=3 (x = 46 + 3*144 = 478 .. 622)
+        const pumpX = 682;
+        const pumpW = 386; // Ends at 1068, leaving x=1086..1664 free for WB + WC!
 
-      {/* ==================== BOTTOM FOOTER STRIP (A1) ==================== */}
-      <g transform="translate(16, 996)">
-        {/* 1. PROGRESS SUMMARY BOX */}
-        <rect
-          x={6}
-          y={0}
-          width={924}
-          height={168}
-          fill="#ffffff"
-          stroke="#1e3a8a"
-          strokeWidth={1.1}
-        />
-        <rect
-          x={6}
-          y={0}
-          width={924}
-          height={22}
-          fill="#eff6ff"
-          stroke="#1e3a8a"
-          strokeWidth={0.8}
-        />
-        <text
-          x={468}
-          y={15}
-          textAnchor="middle"
-          fontSize={10.5}
-          fontWeight="700"
-          fill="#1e3a8a"
-        >
-          WA SECTION - PROGRESS SUMMARY
-        </text>
-
-        <line x1={270} y1={22} x2={270} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
-        <line x1={550} y1={22} x2={550} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
-
-        {/* Sub-col 1: SHAFT PROGRESS */}
-        <text x={138} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
-          SHAFT PROGRESS (WA-01 to WA-36 + 24.1)
-        </text>
-        <text x={20} y={55} fontSize={7.6} fill="#0f172a">TOTAL SHAFT</text>
-        <text x={252} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {summary.totalShafts} Nos</text>
-
-        <text x={20} y={71} fontSize={7.6} fill="#15803d" fontWeight="600">COMPLETED SHAFT</text>
-        <text x={252} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#15803d">: {String(summary.completedShafts).padStart(2, '0')} Nos</text>
-
-        <text x={20} y={87} fontSize={7.6} fill="#b45309" fontWeight="600">ON-GOING SHAFT</text>
-        <text x={252} y={87} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#b45309">: {String(summary.ongoingShafts).padStart(2, '0')} Nos</text>
-
-        <text x={20} y={103} fontSize={7.6} fill="#dc2626">REMAINING SHAFT</text>
-        <text x={252} y={103} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#dc2626">: {String(summary.remainingShafts).padStart(2, '0')} Nos</text>
-
-        {viewMode === 'overall' ? (
+        return (
           <g>
-            <rect x={16} y={114} width={242} height={44} rx={3} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.7} />
-            <text x={24} y={128} fontSize={7} fontWeight="700" fill="#166534">
-              PUMP STATION (GOLAPBAG SPS):
-            </text>
-            <text x={24} y={140} fontSize={6.8} fill="#0f172a">
-              - Lower Main Structure: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Layers (Sink {pumpStation.sinkingCompletedM}m)
-            </text>
-            <text x={24} y={152} fontSize={6.8} fontWeight="700" fill="#1e3a8a">
-              - Upper Machine Room: {pumpStation.machineRoom.status.toUpperCase()}
-            </text>
-          </g>
-        ) : (
-          <g>
-            <rect x={16} y={114} width={242} height={44} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
-            <text x={24} y={130} fontSize={7} fontWeight="700" fill="#92400e">
-              {viewMode === 'weekly' ? 'WEEKLY DELTA (FILE 2 vs FILE 1):' : 'MONTHLY DELTA (FILE 2 vs FILE 1):'}
-            </text>
-            <text x={24} y={142} fontSize={7} fill="#78350f">
-              - Shaft Layers Completed: +{summary.delta.addedLayers} layers
-            </text>
-            <text x={24} y={153} fontSize={7} fill="#78350f">
-              - Shafts Completed: +{summary.delta.addedShaftsCompleted} Nos
-            </text>
-          </g>
-        )}
-
-        {/* Sub-col 2: MANHOLE PROGRESS (2 PARTS) */}
-        <text x={410} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
-          MANHOLE PROGRESS (CASTING + PRECAST)
-        </text>
-        <text x={284} y={55} fontSize={7.6} fill="#0f172a">TOTAL MANHOLE</text>
-        <text x={536} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {summary.totalManholes} Nos</text>
-
-        <text x={284} y={71} fontSize={7.6} fill="#15803d" fontWeight="600">COMPLETED (BOTH PARTS)</text>
-        <text x={536} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#15803d">: {String(summary.completedManholes).padStart(2, '0')} Nos</text>
-
-        <text x={284} y={87} fontSize={7.6} fill="#b45309" fontWeight="600">ON-GOING MANHOLE</text>
-        <text x={536} y={87} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#b45309">: {String(summary.ongoingManholes).padStart(2, '0')} Nos</text>
-
-        <text x={284} y={103} fontSize={7.6} fill="#1d4ed8">- Lower Casting Complete</text>
-        <text x={536} y={103} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#1d4ed8">: {String(summary.castingCompleteCount).padStart(2, '0')} Nos</text>
-
-        <text x={284} y={119} fontSize={7.6} fill="#0284c7">- Upper Precast Ring Complete</text>
-        <text x={536} y={119} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0284c7">: {String(summary.precastCompleteCount).padStart(2, '0')} Nos</text>
-
-        {viewMode !== 'overall' && (
-          <text x={284} y={145} fontSize={7.2} fontWeight="700" fill="#92400e">
-            Period Added: Casting +{summary.delta.addedCastingCompleted} | Precast +{summary.delta.addedPrecastCompleted}
-          </text>
-        )}
-
-        {/* Sub-col 3: MICRO-TUNNELLING PROGRESS */}
-        <text x={740} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
-          MICRO-TUNNELLING PROGRESS
-        </text>
-        <text x={564} y={55} fontSize={7.6} fontWeight="700" fill="#0f172a">TOTAL LENGTH</text>
-        <text x={914} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">
-          : {(summary.totalTunnelLengthM / 1000).toFixed(3)} km
-        </text>
-        <text x={564} y={71} fontSize={7.6} fontWeight="700" fill="#a21caf">COMPLETED LENGTH</text>
-        <text x={914} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#a21caf">
-          : {(summary.completedTunnelLengthM / 1000).toFixed(3)} km ({summary.tunnelPctOverall.toFixed(1)}%)
-        </text>
-
-        <text x={564} y={91} fontSize={7.2} fill="#334155">1. DN 900  (Total: {(summary.byDia.DN900.totalM / 1000).toFixed(3)} km)</text>
-        <text x={914} y={91} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(summary.byDia.DN900.completedM / 1000).toFixed(3)} km</text>
-
-        <text x={564} y={107} fontSize={7.2} fill="#334155">2. DN 1100 (Total: {(summary.byDia.DN1100.totalM / 1000).toFixed(3)} km)</text>
-        <text x={914} y={107} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(summary.byDia.DN1100.completedM / 1000).toFixed(3)} km</text>
-
-        <text x={564} y={123} fontSize={7.2} fill="#334155">3. DN 1600 (Total: {(summary.byDia.DN1600.totalM / 1000).toFixed(3)} km)</text>
-        <text x={914} y={123} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(summary.byDia.DN1600.completedM / 1000).toFixed(3)} km</text>
-
-        {viewMode !== 'overall' && (
-          <g>
-            <rect x={562} y={133} width={354} height={24} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
-            <text x={739} y={148} textAnchor="middle" fontSize={7.4} fontWeight="700" fill="#92400e">
-              {viewMode === 'weekly' ? 'THIS WEEK TUNNEL ADDED: ' : 'THIS MONTH TUNNEL ADDED: '}
-              +{summary.delta.addedTunnelM.toFixed(1)} m ({(summary.delta.addedTunnelM / 1000).toFixed(3)} km)
-            </text>
-          </g>
-        )}
-
-        {/* 2. COLOR & SYMBOL LEGEND */}
-        <rect
-          x={938}
-          y={0}
-          width={374}
-          height={168}
-          fill="#ffffff"
-          stroke="#1e3a8a"
-          strokeWidth={1.1}
-        />
-        <rect
-          x={938}
-          y={0}
-          width={374}
-          height={22}
-          fill="#eff6ff"
-          stroke="#1e3a8a"
-          strokeWidth={0.8}
-        />
-        <text x={1125} y={15} textAnchor="middle" fontSize={9.5} fontWeight="700" fill="#1e3a8a">
-          COLOR LEGEND ({viewMode.toUpperCase()})
-        </text>
-
-        {viewMode === 'overall' ? (
-          <g>
-            {[
-              { c: colors.overallShaft, label: 'Shaft Layers (W1-W13) & Slab Complete' },
-              { c: colors.overallCasting, label: 'Manhole Lower Part: In-situ Casting' },
-              { c: colors.overallPrecast, label: 'Manhole Upper Part: Precast Ring' },
-              { c: colors.overallTunnel, label: 'Micro-Tunnelling Completed (%)' },
-              { c: '#ffffff', stroke: colors.remainingOutline, label: 'Remaining / Not Yet Started' },
-            ].map((item, i) => (
-              <g key={item.label} transform={`translate(950, ${34 + i * 24})`}>
-                <rect
-                  x={0}
-                  y={0}
-                  width={20}
-                  height={13}
-                  fill={item.c}
-                  stroke={item.stroke || '#334155'}
-                  strokeWidth={0.9}
-                />
-                <text x={28} y={10} fontSize={7.3} fontWeight="600" fill="#0f172a">
-                  {item.label}
-                </text>
-              </g>
+            {[1, 2, 3].map((r) => (
+              <line
+                key={r}
+                x1={20}
+                y1={gridY + r * rowH - 3}
+                x2={SHEET_W - 20}
+                y2={gridY + r * rowH - 3}
+                stroke="#e2e8f0"
+                strokeWidth={0.7}
+                strokeDasharray="4,4"
+              />
             ))}
-          </g>
-        ) : (
-          <g>
-            {[
-              {
-                c: viewMode === 'weekly' ? colors.prevWeekShaft : colors.prevMonthShaft,
-                label: 'Shaft Done in File 1 (Previous)',
-              },
-              {
-                c: viewMode === 'weekly' ? colors.prevWeekManhole : colors.prevMonthManhole,
-                label: 'Manhole Done in File 1 (Previous)',
-              },
-              {
-                c: viewMode === 'weekly' ? colors.prevWeekTunnel : colors.prevMonthTunnel,
-                label: 'Tunnel Done in File 1 (Previous)',
-              },
-              {
-                c: currHighlight,
-                label: viewMode === 'weekly' ? 'NEW WEEKLY PROGRESS (File 2 vs File 1)' : 'NEW MONTHLY PROGRESS (File 2 vs File 1)',
-                bold: true,
-              },
-              {
-                c: '#ffffff',
-                stroke: colors.remainingOutline,
-                label: 'Remaining Work (Not Started)',
-              },
-            ].map((item, i) => (
-              <g key={item.label} transform={`translate(950, ${34 + i * 24})`}>
-                <rect
-                  x={0}
-                  y={0}
-                  width={20}
-                  height={13}
-                  fill={item.c}
-                  stroke={item.stroke || '#334155'}
-                  strokeWidth={0.9}
-                />
-                <text
-                  x={28}
-                  y={10}
-                  fontSize={7.1}
-                  fontWeight={item.bold ? '700' : '600'}
-                  fill={item.bold ? '#b45309' : '#0f172a'}
-                >
-                  {item.label}
+
+            {/* 1. WA SECTION TAKES MAJOR UPPER SPACE */}
+            {renderShaftGrid(waShafts, baseline.shafts, {
+              cols,
+              gridX,
+              gridY,
+              gridW,
+              rowH,
+              connectLastToPump: true,
+              pumpStructAbsX: pumpX + 6,
+            })}
+
+            {settings.showPumpStation &&
+              renderPumpStation(pumpStation, pumpX, gridY + rowH * 3 + 2, pumpW, 212)}
+
+            {/* 2. WB SECTION AT BOTTOM-RIGHT SIDE (x=1086..1664, y=704..960) */}
+            <WbNavigationMapGroup
+              wb={wbData}
+              x={1086}
+              y={704}
+              w={578}
+              h={256}
+              settings={settings}
+              viewMode={viewMode}
+              prevCompletedLengthM={wbPrevCompletedM}
+              highlightColor={currHighlight}
+              selectedNodeId={selectedShaftId}
+              onSelectNode={(id) => onSelectWbNode?.(id)}
+              compact={true}
+              clipIdSuffix="combined-wb"
+            />
+
+            {/* 3. WC SECTION RIGHT BELOW WB IN FORMER TITLE-BLOCK SLOT (x=1086..1664, y=964..1168) */}
+            <WcNavigationMapGroup
+              wc={wcData}
+              x={1086}
+              y={964}
+              w={578}
+              h={204}
+              settings={settings}
+              selectedShaftId={selectedShaftId}
+              onSelectShaft={(id) => onSelectShaft(id, 'shaft')}
+              compact={true}
+              clipIdSuffix="combined-wc"
+            />
+
+            {/* 4. COMPACT FOOTER BOXES SHIFTED HORIZONTALLY LEFT (x=22..1078, y=944..1168) */}
+            <g transform="translate(22, 944)">
+              {/* Compact Combined Summary (WA + Pump + WB + WC) */}
+              <rect x={0} y={0} width={554} height={224} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+              <rect x={0} y={0} width={554} height={20} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+              <text x={277} y={13.5} textAnchor="middle" fontSize={8.8} fontWeight="700" fill="#1e3a8a">
+                COMBINED PROGRESS SUMMARY (WA, WB, WC & PUMP STATION)
+              </text>
+              <line x1={276} y1={20} x2={276} y2={224} stroke="#1e3a8a" strokeWidth={0.7} />
+
+              {/* Left Col: WA Shafts + Manholes + Pump Station */}
+              <text x={138} y={34} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                WA SHAFT, MANHOLE & PUMP SPS
+              </text>
+              <text x={10} y={50} fontSize={6.8} fill="#0f172a">WA Shafts (37 Nos)</text>
+              <text x={266} y={50} textAnchor="end" fontSize={6.8} fontWeight="700" fill="#15803d">
+                Done: {waSummary.completedShafts} | Ong: {waSummary.ongoingShafts} | Rem: {waSummary.remainingShafts}
+              </text>
+              <text x={10} y={65} fontSize={6.8} fill="#0f172a">WA Manholes (2-Part)</text>
+              <text x={266} y={65} textAnchor="end" fontSize={6.8} fontWeight="700" fill="#1d4ed8">
+                Both: {waSummary.completedManholes} | Cast: {waSummary.castingCompleteCount} | Ring: {waSummary.precastCompleteCount}
+              </text>
+              <text x={10} y={80} fontSize={6.8} fill="#0f172a">WA Micro-Tunnelling</text>
+              <text x={266} y={80} textAnchor="end" fontSize={6.8} fontWeight="700" fill="#a21caf">
+                {(waSummary.completedTunnelLengthM / 1000).toFixed(3)} / {(waSummary.totalTunnelLengthM / 1000).toFixed(3)} km ({waSummary.tunnelPctOverall.toFixed(1)}%)
+              </text>
+              <text x={14} y={94} fontSize={6.1} fill="#334155">
+                DN900: {(waSummary.byDia.DN900.completedM / 1000).toFixed(2)}/{(waSummary.byDia.DN900.totalM / 1000).toFixed(2)}km | DN1100: {(waSummary.byDia.DN1100.completedM / 1000).toFixed(2)}/{(waSummary.byDia.DN1100.totalM / 1000).toFixed(2)}km
+              </text>
+              <text x={14} y={107} fontSize={6.1} fill="#334155">
+                DN1600: {(waSummary.byDia.DN1600.completedM / 1000).toFixed(2)}/{(waSummary.byDia.DN1600.totalM / 1000).toFixed(2)}km
+              </text>
+
+              <rect x={8} y={118} width={260} height={96} rx={2.5} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.65} />
+              <text x={15} y={131} fontSize={6.6} fontWeight="700" fill="#166534">GOLAPBAG PUMP STATION (SPS):</text>
+              <text x={15} y={145} fontSize={6.3} fill="#0f172a">
+                - Lower Structure: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Layers (Cast: {pumpStation.castingCompleteM}m)
+              </text>
+              <text x={15} y={159} fontSize={6.3} fontWeight="700" fill="#0f766e">
+                - Sinking: {pumpStation.sinkingCompletedM}m / {pumpStation.totalHeightM}m [{pumpStation.sinkingStatus.toUpperCase()}]
+              </text>
+              <text x={15} y={173} fontSize={6.3} fontWeight="700" fill="#1e3a8a">
+                - Upper Machine Room: {pumpStation.machineRoom.status.toUpperCase()}
+              </text>
+              {viewMode !== 'overall' && (
+                <text x={15} y={196} fontSize={6.3} fontWeight="700" fill="#b45309">
+                  Period Added: +{waSummary.delta.addedLayers}L, +{waSummary.delta.addedTunnelM.toFixed(1)}m WA
                 </text>
-              </g>
-            ))}
-          </g>
-        )}
+              )}
 
-        <g transform="translate(950, 154)">
-          <circle cx={4} cy={-2} r={3} fill="#16a34a" />
-          <text x={11} y={1} fontSize={6.4} fill="#334155">Complete</text>
-          <circle cx={68} cy={-2} r={3} fill="#f59e0b" />
-          <text x={75} y={1} fontSize={6.4} fill="#334155">On-going</text>
-          <circle cx={136} cy={-2} r={3} fill="#dc2626" />
-          <text x={143} y={1} fontSize={6.4} fill="#334155">Remaining</text>
-        </g>
+              {/* Right Col: WB Open Cut + WC Micro-Tunnelling */}
+              <text x={415} y={34} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                WB (OPEN CUT) & WC (MICRO-TUNNEL)
+              </text>
+              <rect x={284} y={42} width={262} height={78} rx={2.5} fill="#eff6ff" stroke="#2563eb" strokeWidth={0.65} />
+              <text x={292} y={55} fontSize={6.8} fontWeight="700" fill="#1e3a8a">WB SECTION ({wbData.method} {wbData.pipeDia}):</text>
+              <text x={292} y={69} fontSize={6.4} fill="#0f172a">
+                Total: {(wbData.totalLengthM / 1000).toFixed(3)} km ({wbData.totalLengthM} m)
+              </text>
+              <text x={292} y={83} fontSize={6.4} fontWeight="700" fill="#15803d">
+                Completed: {(wbData.completedLengthM / 1000).toFixed(3)} km ({wbData.completedLengthM.toFixed(1)} m)
+              </text>
+              <text x={292} y={97} fontSize={6.4} fontWeight="700" fill="#dc2626">
+                Remaining: {(Math.max(0, wbData.totalLengthM - wbData.completedLengthM) / 1000).toFixed(3)} km
+              </text>
+              <text x={292} y={111} fontSize={6.1} fill="#334155">
+                Nodes (38): Done {wbDoneCount} | Ong {wbOngoingCount} | Rem {wbRemCount}
+              </text>
 
-        {/* 3. DRAWING TITLE BLOCK (A1) */}
-        <rect
-          x={1320}
-          y={0}
-          width={324}
-          height={168}
-          fill="#ffffff"
-          stroke="#1e3a8a"
-          strokeWidth={1.1}
-        />
-        <rect x={1320} y={0} width={324} height={22} fill="#1e3a8a" />
-        <text x={1482} y={15} textAnchor="middle" fontSize={9.5} fontWeight="700" fill="#ffffff">
-          PROJECT DRAWING TITLE BLOCK
-        </text>
-        {[
-          ['Client:', settings.clientName],
-          ['Contractor:', settings.contractorName],
-          ['Section:', 'WA Section (Micro-Tunnelling)'],
-          ['Prepared By:', settings.preparedBy],
-          ['Checked By:', settings.checkedBy],
-          ['Report Date:', formatDateDisplay(settings.reportDate)],
-          ['Drawing No:', `${settings.drawingNo}  (${settings.revision})`],
-          ['Page Setup:', 'ISO A1 Landscape (841 x 594 mm)'],
-        ].map(([k, v], i) => (
-          <g key={k} transform={`translate(1320, ${22 + i * 18.2})`}>
-            <line x1={0} y1={18.2} x2={324} y2={18.2} stroke="#cbd5e1" strokeWidth={0.6} />
-            <text x={8} y={12} fontSize={6.8} fontWeight="700" fill="#475569">{k}</text>
-            <text x={88} y={12} fontSize={7.1} fontWeight="600" fill="#0f172a">{trunc(v, 36)}</text>
+              <rect x={284} y={128} width={262} height={86} rx={2.5} fill="#faf5ff" stroke="#9333ea" strokeWidth={0.65} />
+              <text x={292} y={141} fontSize={6.8} fontWeight="700" fill="#6b21a8">WC SECTION (MICRO-TUNNELLING):</text>
+              <text x={292} y={156} fontSize={6.4} fill="#0f172a">
+                Shafts ({wcSummary.totalShafts}): Done {wcSummary.completedShafts} | Ong {wcSummary.ongoingShafts} | Rem {wcSummary.remainingShafts}
+              </text>
+              <text x={292} y={171} fontSize={6.4} fontWeight="700" fill="#a21caf">
+                Tunnel: {(wcSummary.completedTunnelLengthM / 1000).toFixed(3)} / {(wcSummary.totalTunnelLengthM / 1000).toFixed(3)} km ({wcSummary.tunnelPctOverall.toFixed(1)}%)
+              </text>
+              <text x={292} y={186} fontSize={6.1} fill="#334155">
+                Manholes: Done {wcSummary.completedManholes} / {wcSummary.totalManholes}
+              </text>
+              <text x={292} y={200} fontSize={6.0} fill="#475569">
+                Status: {wcSummary.completedTunnelLengthM > 0 || wcSummary.completedShafts > 0 ? 'Active Construction' : 'Not Yet Started (Blank Baseline)'}
+              </text>
+
+              {renderLegendAndTitle(562, 0, 232, 224, 800, 0, 256, 224, true)}
+            </g>
           </g>
-        ))}
-      </g>
+        );
+      })()}
     </svg>
   );
 };

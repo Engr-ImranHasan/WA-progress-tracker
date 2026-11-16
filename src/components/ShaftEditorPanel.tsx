@@ -37,9 +37,12 @@ import {
   resizeShaftLayers,
 } from '../utils/calculations';
 import { DEFAULT_COLORS } from '../data/initialWaData';
+import { createInitialWcData } from '../data/wbcInitialData';
+import { applyKmlToWc, MapConfigAndKmlBox } from './WbWcEditors';
 
 interface ShaftEditorPanelProps {
   state: AppState;
+  sectionTarget?: 'wa' | 'wc';
   selectedShaftId: string;
   onSelectShaft: (id: string) => void;
   onUpdateShaft: (id: string, patch: Partial<ShaftRecord>) => void;
@@ -124,6 +127,7 @@ function StatusChip({ status }: { status: WorkStatus }) {
 
 export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
   state,
+  sectionTarget = 'wa',
   selectedShaftId,
   onSelectShaft,
   onUpdateShaft,
@@ -136,19 +140,23 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
 
   const lang: UiLang = state.uiLang;
   const L = LABELS[lang];
+  const isWc = sectionTarget === 'wc';
+  const shaftsList = isWc ? state.wc.shafts : state.shafts;
 
-  const isPumpSelected = selectedShaftId === 'PUMP_STATION';
-  const idx = state.shafts.findIndex((s) => s.id === selectedShaftId);
-  const shaft = state.shafts[idx >= 0 ? idx : 0];
+  const isPumpSelected = !isWc && selectedShaftId === 'PUMP_STATION';
+  const idx = shaftsList.findIndex((s) => s.id === selectedShaftId);
+  const shaft = shaftsList[idx >= 0 ? idx : 0];
   const prevShaft = isPumpSelected
-    ? state.shafts[state.shafts.length - 1]
+    ? shaftsList[shaftsList.length - 1]
     : idx > 0
-    ? state.shafts[idx - 1]
+    ? shaftsList[idx - 1]
     : null;
   const nextShaftId = isPumpSelected
     ? null
-    : idx < state.shafts.length - 1
-    ? state.shafts[idx + 1].id
+    : idx < shaftsList.length - 1
+    ? shaftsList[idx + 1].id
+    : isWc
+    ? null
     : 'PUMP_STATION';
 
   const updatePumpStation = (
@@ -162,7 +170,8 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
 
   const activeBaseline =
     state.viewMode === 'monthly' ? state.monthlyBaseline : state.weeklyBaseline;
-  const bSnap = activeBaseline.shafts[shaft.id];
+  const baselineMap = isWc ? (activeBaseline.wcShafts || {}) : activeBaseline.shafts;
+  const bSnap = baselineMap[shaft.id];
 
   const shStatus = getShaftStatus(shaft);
   const mhStatus = getManholeStatus(shaft);
@@ -212,7 +221,8 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
     const targetKey = state.viewMode === 'monthly' ? 'monthlyBaseline' : 'weeklyBaseline';
     onUpdateState((prev) => {
       const base = prev[targetKey];
-      const existing = base.shafts[shaft.id] || {
+      const targetMap = isWc ? (base.wcShafts || {}) : base.shafts;
+      const existing = targetMap[shaft.id] || {
         layerFlags: Array(shaft.totalLayers).fill(false),
         bottomSlabDone: false,
         castingPct: 0,
@@ -227,27 +237,28 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
             )
           : existing.layerFlags;
 
+      const updatedSnap = {
+        ...existing,
+        layerFlags: nextLayers,
+        bottomSlabDone: patch.bottomSlabDone ?? existing.bottomSlabDone,
+        castingPct: patch.castingPct ?? existing.castingPct,
+        precastPct: patch.precastPct ?? existing.precastPct,
+        tunnelPct: patch.tunnelPct ?? existing.tunnelPct,
+      };
+
       return {
         ...prev,
         [targetKey]: {
           ...base,
-          shafts: {
-            ...base.shafts,
-            [shaft.id]: {
-              ...existing,
-              layerFlags: nextLayers,
-              bottomSlabDone: patch.bottomSlabDone ?? existing.bottomSlabDone,
-              castingPct: patch.castingPct ?? existing.castingPct,
-              precastPct: patch.precastPct ?? existing.precastPct,
-              tunnelPct: patch.tunnelPct ?? existing.tunnelPct,
-            },
-          },
+          ...(isWc
+            ? { wcShafts: { ...(base.wcShafts || {}), [shaft.id]: updatedSnap } }
+            : { shafts: { ...base.shafts, [shaft.id]: updatedSnap } }),
         },
       };
     });
   };
 
-  const filteredShafts = state.shafts.filter((s) => {
+  const filteredShafts = shaftsList.filter((s) => {
     const matchesSearch =
       !search.trim() ||
       s.id.toLowerCase().includes(search.trim().toLowerCase()) ||
@@ -274,7 +285,7 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
           }`}
         >
           <Layers className="h-3.5 w-3.5" />
-          {L.shaftEditor}
+          {isWc ? (lang === 'bn' ? 'WC Shaft এডিট' : 'Edit WC') : L.shaftEditor}
         </button>
         <button
           onClick={() => setActiveTab('table')}
@@ -285,7 +296,7 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
           }`}
         >
           <Table2 className="h-3.5 w-3.5" />
-          {L.bulkTable}
+          {lang === 'bn' ? `সব ${shaftsList.length}টি তালিকা` : `All ${shaftsList.length} Table`}
         </button>
         <button
           onClick={() => setActiveTab('settings')}
@@ -320,21 +331,23 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 onChange={(e) => onSelectShaft(e.target.value)}
                 className="w-full rounded-md border border-blue-300 bg-white px-2.5 py-1 text-center text-sm font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {state.shafts.map((s) => (
+                {shaftsList.map((s) => (
                   <option key={s.id} value={s.id}>
                     Shaft {s.id} → {s.nextId} ({s.pipeDia})
                   </option>
                 ))}
-                <option value="PUMP_STATION">
-                  ★ Pump Station (Golapbag SPS — 2 Parts)
-                </option>
+                {!isWc && (
+                  <option value="PUMP_STATION">
+                    ★ Pump Station (Golapbag SPS — 2 Parts)
+                  </option>
+                )}
               </select>
               {isPumpSelected ? (
                 <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[11px]">
                   <span className="text-slate-500 font-medium">Lower:</span>
                   <StatusChip status={getPumpLowerStatus(state.pumpStation)} />
-                  <span className="text-slate-500 font-medium ml-1">Machine Room:</span>
-                  <StatusChip status={state.pumpStation.machineRoom.status} />
+                  <span className="text-slate-500 font-medium ml-1">Sinking:</span>
+                  <StatusChip status={state.pumpStation.sinkingStatus} />
                 </div>
               ) : (
                 <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[11px]">
@@ -358,8 +371,8 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
             </button>
           </div>
 
-          {/* Quick Jump Pill to Pump Station */}
-          {!isPumpSelected && (
+          {/* Quick Jump Pill to Pump Station (WA only) OR WC Blank Status Notice (WC only) */}
+          {!isWc && !isPumpSelected && (
             <button
               onClick={() => onSelectShaft('PUMP_STATION')}
               className="flex w-full items-center justify-between rounded-md border border-teal-200 bg-teal-50/70 px-2.5 py-1.5 text-xs font-semibold text-teal-900 hover:bg-teal-100 transition"
@@ -372,6 +385,26 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               </span>
               <span className="text-[11px] font-bold text-teal-700">Open →</span>
             </button>
+          )}
+          {isWc && (
+            <div className="flex items-center justify-between rounded-md border border-purple-200 bg-purple-50/70 px-2.5 py-1.5 text-[11px] text-purple-950">
+              <span className="font-semibold">
+                {lang === 'bn'
+                  ? 'WC সেকশন (২৭ Shaft): কাজ শুরু হলে নিচে থেকে আপডেট করুন'
+                  : 'WC Section (27 Shafts): Blank baseline — update anytime below'}
+              </span>
+              <button
+                onClick={() =>
+                  onUpdateState((prev) => ({
+                    ...prev,
+                    wc: createInitialWcData(),
+                  }))
+                }
+                className="rounded border border-purple-300 bg-white px-1.5 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100"
+              >
+                Reset Blank
+              </button>
+            </div>
           )}
 
           {/* ==================== PUMP STATION 2-PART EDITOR ==================== */}
@@ -548,10 +581,57 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                   </div>
                 </div>
 
-                {/* 5 Layers Editor */}
+                {/* Sinking Status Control (Complete / On-going / Remaining) */}
+                <div className="rounded-md border border-teal-200 bg-teal-50/60 p-2 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-teal-950">
+                      {lang === 'bn' ? 'Sinking কাজের অবস্থা (Status)' : 'Sinking Work Status'}
+                    </span>
+                    <StatusChip status={state.pumpStation.sinkingStatus} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['complete', 'ongoing', 'remaining'] as WorkStatus[]).map((st) => {
+                      const active = state.pumpStation.sinkingStatus === st;
+                      const style =
+                        st === 'complete'
+                          ? active
+                            ? 'bg-emerald-600 text-white border-emerald-700'
+                            : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                          : st === 'ongoing'
+                          ? active
+                            ? 'bg-amber-400 text-slate-950 border-amber-600'
+                            : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'
+                          : active
+                          ? 'bg-rose-600 text-white border-rose-700'
+                          : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50';
+                      return (
+                        <button
+                          key={st}
+                          onClick={() =>
+                            updatePumpStation((ps) => ({ ...ps, sinkingStatus: st }))
+                          }
+                          className={`rounded-md border px-2 py-1 text-[11px] font-bold capitalize transition ${style}`}
+                        >
+                          {st === 'ongoing' ? 'On-going' : st}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 5 Layers Editor (Bottom-to-Top Elevation: 5th Top down to 1st Bottom) */}
                 <div className="space-y-2">
-                  {state.pumpStation.layers.map((ly, li) => {
+                  <div className="text-[10px] font-semibold text-slate-500">
+                    {lang === 'bn'
+                      ? 'লেয়ার হিসাব নিচ থেকে উপরে (1st Layer = নিচে, 5th Layer = উপরে):'
+                      : 'Layers counted bottom-to-top (L1 at base → L5 at top):'}
+                  </div>
+                  {[4, 3, 2, 1, 0].map((li) => {
+                    const ly = state.pumpStation.layers[li];
+                    if (!ly) return null;
                     const dur = calcDurationDays(ly.sDate, ly.eDate);
+                    const posLabel =
+                      li === 0 ? 'Bottom Base' : li === 4 ? 'Top Slab' : `Level ${li + 1}`;
                     return (
                       <div
                         key={ly.name}
@@ -559,7 +639,10 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-bold text-slate-800">
-                            {ly.name}
+                            L{li + 1} · {ly.name}{' '}
+                            <span className="text-[10px] font-medium text-slate-500">
+                              ({posLabel})
+                            </span>
                           </span>
                           <div className="flex gap-1">
                             {(['complete', 'ongoing', 'remaining'] as WorkStatus[]).map((st) => {
@@ -1054,22 +1137,26 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                   <option value="DN900">DN900</option>
                   <option value="DN1100">DN1100</option>
                   <option value="DN1600">DN1600</option>
+                  <option value="DN1800">DN1800</option>
+                  <option value="DN2400">DN2400</option>
+                  <option value="DN2600">DN2600</option>
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-semibold text-slate-500">
-                  {L.totalLen}
+                <label className="block text-[10px] font-semibold text-blue-700">
+                  {L.totalLen} (Editable)
                 </label>
                 <input
                   type="number"
                   step="0.1"
+                  min={0}
                   value={shaft.tunnelLengthM}
                   onChange={(e) =>
                     onUpdateShaft(shaft.id, {
-                      tunnelLengthM: Math.max(0.1, Number(e.target.value) || 0),
+                      tunnelLengthM: Math.max(0, Number(e.target.value) || 0),
                     })
                   }
-                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs font-semibold"
+                  className="mt-0.5 w-full rounded border border-blue-300 bg-blue-50/40 px-2 py-1 text-xs font-bold text-slate-900"
                 />
               </div>
             </div>
@@ -1282,12 +1369,49 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               )}
             </div>
           )}
+
+          {/* WC Navigation Map & KML/KMZ Upload when editing WC */}
+          {isWc && (
+            <MapConfigAndKmlBox
+              sectionLabel="WC"
+              settings={state.settings}
+              overlays={state.wc.customKmlLines || []}
+              lang={lang}
+              onUpdateSettings={(patch) =>
+                onUpdateState((p) => ({
+                  ...p,
+                  settings: { ...p.settings, ...patch },
+                }))
+              }
+              onAddOverlays={(lines) =>
+                onUpdateState((p) => ({
+                  ...p,
+                  wc: {
+                    ...p.wc,
+                    customKmlLines: [...(p.wc.customKmlLines || []), ...lines],
+                  },
+                }))
+              }
+              onClearOverlays={() =>
+                onUpdateState((p) => ({
+                  ...p,
+                  wc: { ...p.wc, customKmlLines: [] },
+                }))
+              }
+              onReplaceCoordinates={(pts) =>
+                onUpdateState((p) => ({
+                  ...p,
+                  wc: applyKmlToWc(p.wc, pts),
+                }))
+              }
+            />
+          )}
             </>
           )}
         </div>
       )}
 
-      {/* ==================== TAB 2: BULK QUICK TABLE (ALL 37) ==================== */}
+      {/* ==================== TAB 2: BULK QUICK TABLE ==================== */}
       {activeTab === 'table' && (
         <div className="flex flex-1 flex-col overflow-hidden p-3 space-y-2">
           <div className="flex items-center gap-2">
@@ -1297,7 +1421,7 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={L.searchPlaceholder}
+                placeholder={isWc ? 'Search WC-1..WC-27...' : L.searchPlaceholder}
                 className="w-full rounded-md border border-slate-300 pl-8 pr-2 py-1.5 text-xs"
               />
             </div>
@@ -1306,7 +1430,7 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               onChange={(e) => setFilterStatus(e.target.value as 'all' | WorkStatus)}
               className="rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium"
             >
-              <option value="all">All (37)</option>
+              <option value="all">All ({shaftsList.length})</option>
               <option value="ongoing">On-going</option>
               <option value="complete">Complete</option>
               <option value="remaining">Remaining</option>
@@ -1472,6 +1596,40 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               />
               Show Pump Station on A1 Sheet
             </label>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <label className="flex items-center gap-2 font-medium text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={state.settings.showMapBackground}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, showMapBackground: e.target.checked },
+                    }))
+                  }
+                  className="h-4 w-4 rounded"
+                />
+                Navigation Map Tiles
+              </label>
+              <select
+                value={state.settings.mapStyle}
+                onChange={(e) =>
+                  onUpdateState((p) => ({
+                    ...p,
+                    settings: {
+                      ...p.settings,
+                      mapStyle: e.target.value as 'voyager' | 'light' | 'cad',
+                    },
+                  }))
+                }
+                className="w-full rounded border border-slate-300 px-2 py-1"
+              >
+                <option value="voyager">Map: Street Voyager</option>
+                <option value="light">Map: Clean Light</option>
+                <option value="cad">Map: Vector CAD Grid</option>
+              </select>
+            </div>
 
             <div>
               <label className="block text-[10px] text-slate-500">Section Title</label>

@@ -1,0 +1,791 @@
+import React, { useRef, useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Map as MapIcon,
+  MapPin,
+  RotateCcw,
+  Ruler,
+  Search,
+  Table2,
+  Trash2,
+  Upload,
+  CheckCircle2,
+  Clock,
+  CircleDashed,
+} from 'lucide-react';
+import {
+  AppState,
+  KmlOverlayLine,
+  SheetSettings,
+  UiLang,
+  WbNodeRecord,
+  WbSectionData,
+  WcSectionData,
+  WorkStatus,
+} from '../types';
+import {
+  calcDurationDays,
+  formatDateDisplay,
+  recomputeWbChainages,
+} from '../utils/calculations';
+import { computeWbPolylineSplit, parseKmlOrKmzOrCsvFile } from '../utils/geoMap';
+import { haversineMeters } from '../data/wbcInitialData';
+
+function StatusBadge({ status }: { status: WorkStatus }) {
+  if (status === 'complete') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+        <CheckCircle2 className="h-3 w-3" /> Complete
+      </span>
+    );
+  }
+  if (status === 'ongoing') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+        <Clock className="h-3 w-3" /> On-going
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800">
+      <CircleDashed className="h-3 w-3" /> Remaining
+    </span>
+  );
+}
+
+interface MapUploadPanelProps {
+  sectionLabel: 'WB' | 'WC';
+  settings: SheetSettings;
+  overlays: KmlOverlayLine[];
+  lang: UiLang;
+  onUpdateSettings: (patch: Partial<SheetSettings>) => void;
+  onAddOverlays: (lines: KmlOverlayLine[]) => void;
+  onReplaceCoordinates: (pts: Array<{ name: string; lat: number; lon: number }>) => void;
+  onClearOverlays: () => void;
+}
+
+export const MapConfigAndKmlBox: React.FC<MapUploadPanelProps> = ({
+  sectionLabel,
+  settings,
+  overlays,
+  lang,
+  onUpdateSettings,
+  onAddOverlays,
+  onReplaceCoordinates,
+  onClearOverlays,
+}) => {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [importMode, setImportMode] = useState<'replace' | 'overlay'>('overlay');
+  const [msg, setMsg] = useState<string>('');
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const parsed = await parseKmlOrKmzOrCsvFile(file);
+      if (importMode === 'replace') {
+        if (parsed.points.length >= 2) {
+          onReplaceCoordinates(parsed.points);
+          setMsg(
+            lang === 'bn'
+              ? `${parsed.points.length}টি পয়েন্ট দিয়ে ${sectionLabel} ম্যাপ আপডেট হয়েছে!`
+              : `Updated ${sectionLabel} with ${parsed.points.length} coordinates!`
+          );
+        } else if (parsed.lines.length > 0 && parsed.lines[0].coords.length >= 2) {
+          const pts = parsed.lines[0].coords.map(([lat, lon]: [number, number], i: number) => ({
+            name: `${sectionLabel}${sectionLabel === 'WC' ? '-' : ''}${i + 1}`,
+            lat,
+            lon,
+          }));
+          onReplaceCoordinates(pts);
+          setMsg(
+            lang === 'bn'
+              ? `KML লাইন থেকে ${pts.length}টি নোড তৈরি হয়েছে!`
+              : `Created ${pts.length} nodes from KML track!`
+          );
+        } else {
+          setMsg(lang === 'bn' ? 'ফাইলে যথেষ্ট কোঅর্ডিনেট পাওয়া যায়নি।' : 'Not enough coordinates found.');
+        }
+      } else {
+        const linesToAdd: KmlOverlayLine[] = [...parsed.lines];
+        if (linesToAdd.length === 0 && parsed.points.length >= 2) {
+          linesToAdd.push({
+            name: file.name,
+            coords: parsed.points.map((p) => [p.lat, p.lon]),
+          });
+        }
+        if (linesToAdd.length > 0) {
+          onAddOverlays(linesToAdd);
+          setMsg(
+            lang === 'bn'
+              ? `${linesToAdd.length}টি KML/KMZ ওভারলে ম্যাপে যুক্ত হয়েছে!`
+              : `Added ${linesToAdd.length} KML/KMZ overlay track(s)!`
+          );
+        } else {
+          setMsg(lang === 'bn' ? 'কোনো পাথ বা পয়েন্ট পাওয়া যায়নি।' : 'No track/points found.');
+        }
+      }
+      setTimeout(() => setMsg(''), 4000);
+    } catch {
+      setMsg(lang === 'bn' ? 'KML/KMZ/CSV ফাইলটি পড়া যায়নি।' : 'Failed to parse file.');
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-3 space-y-2.5 text-xs">
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".kml,.kmz,.csv"
+        className="hidden"
+        onChange={handleFile}
+      />
+
+      <div className="flex items-center justify-between">
+        <h4 className="flex items-center gap-1.5 font-bold text-sky-950 uppercase tracking-wide">
+          <MapIcon className="h-3.5 w-3.5 text-sky-600" />
+          {lang === 'bn'
+            ? `${sectionLabel} নেভিগেশন ম্যাপ ও KML/KMZ`
+            : `${sectionLabel} Navigation Map & KML/KMZ`}
+        </h4>
+        <label className="flex items-center gap-1 font-semibold text-sky-900 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.showMapBackground}
+            onChange={(e) => onUpdateSettings({ showMapBackground: e.target.checked })}
+            className="h-3.5 w-3.5 rounded accent-sky-600"
+          />
+          {lang === 'bn' ? 'ম্যাপ অন' : 'Map On'}
+        </label>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1">
+        {(
+          [
+            { id: 'voyager', label: 'Road Map' },
+            { id: 'light', label: 'Light Map' },
+            { id: 'cad', label: 'CAD Grid' },
+          ] as const
+        ).map((st) => (
+          <button
+            key={st.id}
+            onClick={() =>
+              onUpdateSettings({
+                mapStyle: st.id,
+                showMapBackground: st.id === 'cad' ? false : true,
+              })
+            }
+            className={`rounded border px-2 py-1 text-[11px] font-bold transition ${
+              settings.mapStyle === st.id
+                ? 'bg-sky-600 border-sky-700 text-white'
+                : 'bg-white border-sky-200 text-sky-900 hover:bg-sky-100'
+            }`}
+          >
+            {st.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-1.5 rounded-md border border-sky-200 bg-white p-2">
+        <div className="text-[10px] font-semibold text-slate-600">
+          {lang === 'bn'
+            ? 'KML / KMZ / CSV ফাইল আপলোড মোড:'
+            : 'KML / KMZ / CSV Upload Action:'}
+        </div>
+        <div className="grid grid-cols-2 gap-1 text-[10px]">
+          <button
+            onClick={() => setImportMode('overlay')}
+            className={`rounded border px-2 py-1 font-semibold ${
+              importMode === 'overlay'
+                ? 'bg-indigo-600 border-indigo-700 text-white'
+                : 'bg-slate-50 border-slate-200 text-slate-700'
+            }`}
+          >
+            Add Map Overlay
+          </button>
+          <button
+            onClick={() => setImportMode('replace')}
+            className={`rounded border px-2 py-1 font-semibold ${
+              importMode === 'replace'
+                ? 'bg-indigo-600 border-indigo-700 text-white'
+                : 'bg-slate-50 border-slate-200 text-slate-700'
+            }`}
+          >
+            Replace {sectionLabel} Nodes
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5 pt-1">
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-sky-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-sky-700"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {lang === 'bn' ? 'KML / KMZ / CSV আপলোড' : 'Upload .KML / .KMZ / .CSV'}
+          </button>
+          {overlays.length > 0 && (
+            <button
+              onClick={onClearOverlays}
+              className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100"
+              title="Clear custom overlays"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {overlays.length > 0 && (
+          <div className="text-[10px] font-medium text-sky-800">
+            Active KML Overlays: {overlays.length}
+          </div>
+        )}
+        {msg && <div className="text-[10px] font-bold text-emerald-700">{msg}</div>}
+      </div>
+    </div>
+  );
+};
+
+interface WbEditorPanelProps {
+  state: AppState;
+  selectedNodeId: string;
+  onSelectNode: (id: string) => void;
+  onUpdateWb: (updater: (wb: WbSectionData) => WbSectionData) => void;
+  onUpdateSettings: (patch: Partial<SheetSettings>) => void;
+  onSyncTotalLengthFromGps?: () => void;
+}
+
+export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
+  state,
+  selectedNodeId,
+  onSelectNode,
+  onUpdateWb,
+  onUpdateSettings,
+}) => {
+  const [tab, setTab] = useState<'single' | 'table'>('single');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | WorkStatus>('all');
+
+  const wb = state.wb;
+  const lang = state.uiLang;
+  const isBn = lang === 'bn';
+
+  const nodeIdx = wb.nodes.findIndex((n) => n.id === selectedNodeId);
+  const currentNode = wb.nodes[nodeIdx >= 0 ? nodeIdx : 0];
+  const prevNode = nodeIdx > 0 ? wb.nodes[nodeIdx - 1] : null;
+  const nextNode = nodeIdx >= 0 && nodeIdx < wb.nodes.length - 1 ? wb.nodes[nodeIdx + 1] : null;
+
+  const pct = wb.totalLengthM > 0 ? Math.min(100, (wb.completedLengthM / wb.totalLengthM) * 100) : 0;
+  const remM = Math.max(0, wb.totalLengthM - wb.completedLengthM);
+  const split = computeWbPolylineSplit(wb.nodes, wb.completedLengthM, 0);
+
+  const updateNode = (id: string, patch: Partial<WbNodeRecord>) => {
+    onUpdateWb((prev) => {
+      const nextNodes = prev.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n));
+      return {
+        ...prev,
+        nodes:
+          patch.lat !== undefined || patch.lon !== undefined
+            ? recomputeWbChainages(nextNodes, prev.totalLengthM)
+            : nextNodes,
+      };
+    });
+  };
+
+  const handleSyncNodesToLength = (completedLenM: number) => {
+    onUpdateWb((prev) => ({
+      ...prev,
+      completedLengthM: completedLenM,
+      nodes: prev.nodes.map((n) => ({
+        ...n,
+        status:
+          n.chainageM <= completedLenM + 0.05
+            ? 'complete'
+            : n.status === 'ongoing'
+            ? 'ongoing'
+            : 'remaining',
+      })),
+    }));
+  };
+
+  const filteredNodes = wb.nodes.filter((n) => {
+    const matchText = !search.trim() || n.id.toLowerCase().includes(search.trim().toLowerCase());
+    if (!matchText) return false;
+    if (statusFilter === 'all') return true;
+    return n.status === statusFilter;
+  });
+
+  const dur = currentNode ? calcDurationDays(currentNode.sDate, currentNode.eDate) : null;
+
+  return (
+    <aside className="no-print flex h-full flex-col border-l border-slate-200 bg-white">
+      {/* Top 2 Tabs for WB */}
+      <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50 text-xs font-semibold">
+        <button
+          onClick={() => setTab('single')}
+          className={`flex items-center justify-center gap-1.5 py-2.5 border-b-2 transition ${
+            tab === 'single'
+              ? 'border-emerald-600 bg-white text-emerald-700'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <MapPin className="h-3.5 w-3.5" />
+          {isBn ? 'WB দৈর্ঘ্য ও নোড এডিট' : 'WB Length & Node Edit'}
+        </button>
+        <button
+          onClick={() => setTab('table')}
+          className={`flex items-center justify-center gap-1.5 py-2.5 border-b-2 transition ${
+            tab === 'table'
+              ? 'border-emerald-600 bg-white text-emerald-700'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Table2 className="h-3.5 w-3.5" />
+          {isBn ? `সব ${wb.nodes.length}টি নোড` : `All ${wb.nodes.length} Nodes`}
+        </button>
+      </div>
+
+      {tab === 'single' && currentNode && (
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {/* 1. WB COMPLETED LENGTH (GREEN -> BLUE CIRCLE TIP -> RED REMAINING) */}
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 space-y-2.5 shadow-xs">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-xs font-bold text-emerald-950 uppercase tracking-wide">
+                <Ruler className="h-3.5 w-3.5 text-emerald-600" />
+                {isBn ? 'WB পাইপলাইন দৈর্ঘ্য ও নীল চিহ্ন' : 'WB Length & Blue Tip Marker'}
+              </h3>
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                {pct.toFixed(1)}%
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">
+                  {isBn ? 'মোট দৈর্ঘ্য (Total m)' : 'Total Length (m)'}
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min={1}
+                  value={wb.totalLengthM}
+                  onChange={(e) => {
+                    const tot = Math.max(1, Number(e.target.value) || 1);
+                    onUpdateWb((prev) => ({
+                      ...prev,
+                      totalLengthM: tot,
+                      completedLengthM: Math.min(prev.completedLengthM, tot),
+                      nodes: recomputeWbChainages(prev.nodes, tot),
+                    }));
+                  }}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-emerald-800">
+                  {isBn ? 'সম্পন্ন দৈর্ঘ্য (Completed m)' : 'Completed Length (m)'}
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min={0}
+                  max={wb.totalLengthM}
+                  value={wb.completedLengthM}
+                  onChange={(e) => {
+                    const val = Math.max(0, Math.min(wb.totalLengthM, Number(e.target.value) || 0));
+                    onUpdateWb((prev) => ({ ...prev, completedLengthM: val }));
+                  }}
+                  className="mt-0.5 w-full rounded border border-emerald-400 bg-white px-2 py-1 text-xs font-bold text-emerald-900"
+                />
+              </div>
+            </div>
+
+            {/* Visual Green + Blue Circle Tip + Red Remaining bar */}
+            <div className="space-y-1">
+              <input
+                type="range"
+                min={0}
+                max={wb.totalLengthM}
+                step={0.5}
+                value={wb.completedLengthM}
+                onChange={(e) =>
+                  onUpdateWb((prev) => ({ ...prev, completedLengthM: Number(e.target.value) }))
+                }
+                className="w-full accent-emerald-600"
+              />
+              <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-rose-500">
+                <div
+                  className="h-full bg-emerald-600 transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] font-semibold">
+                <span className="text-emerald-700">Done: {wb.completedLengthM.toFixed(1)} m</span>
+                <span className="text-blue-700 font-bold">
+                  ● Blue Tip @ {split.tipPoint ? `${split.tipPoint.chainageM.toFixed(1)}m` : '0m'}
+                </span>
+                <span className="text-rose-700">Rem: {remM.toFixed(1)} m</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Pipe Spec</label>
+                <input
+                  type="text"
+                  value={wb.pipeDia}
+                  onChange={(e) => onUpdateWb((p) => ({ ...p, pipeDia: e.target.value }))}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => handleSyncNodesToLength(wb.completedLengthM)}
+                  className="w-full rounded border border-emerald-600 bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-emerald-700"
+                  title="Mark all nodes up to Blue Tip as Complete"
+                >
+                  {isBn ? 'টিপ পর্যন্ত নোড Complete করুন' : 'Sync Nodes ≤ Blue Tip'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. INDIVIDUAL WB NODE EDITOR (WB1 - WB38) */}
+          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 p-2">
+              <button
+                disabled={!prevNode}
+                onClick={() => prevNode && onSelectNode(prevNode.id)}
+                className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="flex flex-1 flex-col items-center">
+                <select
+                  value={currentNode.id}
+                  onChange={(e) => onSelectNode(e.target.value)}
+                  className="w-full rounded-md border border-blue-300 bg-white px-2.5 py-1 text-center text-sm font-bold text-blue-900"
+                >
+                  {wb.nodes.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.id} — {n.chainageM.toFixed(1)}m ({n.status.toUpperCase()})
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-1.5 flex items-center gap-2 text-[11px]">
+                  <StatusBadge status={currentNode.status} />
+                  <span className="font-semibold text-slate-600">
+                    Chainage: {currentNode.chainageM.toFixed(1)} m
+                  </span>
+                </div>
+              </div>
+
+              <button
+                disabled={!nextNode}
+                onClick={() => nextNode && onSelectNode(nextNode.id)}
+                className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                {isBn ? 'নোডের অবস্থা (Node Status)' : 'Node Work Status'}
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(['complete', 'ongoing', 'remaining'] as WorkStatus[]).map((st) => {
+                  const active = currentNode.status === st;
+                  const style =
+                    st === 'complete'
+                      ? active
+                        ? 'bg-emerald-600 text-white border-emerald-700'
+                        : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                      : st === 'ongoing'
+                      ? active
+                        ? 'bg-amber-400 text-slate-950 border-amber-600'
+                        : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'
+                      : active
+                      ? 'bg-rose-600 text-white border-rose-700'
+                      : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50';
+                  return (
+                    <button
+                      key={st}
+                      onClick={() => updateNode(currentNode.id, { status: st })}
+                      className={`rounded-md border px-2 py-1.5 text-[11px] font-bold capitalize transition ${style}`}
+                    >
+                      {st === 'ongoing' ? 'On-going' : st}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <button
+              onClick={() => handleSyncNodesToLength(currentNode.chainageM)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1.5 text-[11px] font-bold text-blue-900 hover:bg-blue-100"
+            >
+              <Compass className="h-3.5 w-3.5 text-blue-600" />
+              {isBn
+                ? `${currentNode.id} (${currentNode.chainageM.toFixed(1)}m) পর্যন্ত Completed ধরুন`
+                : `Set Blue Tip to ${currentNode.id} (${currentNode.chainageM.toFixed(1)} m)`}
+            </button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">S. Date</label>
+                <input
+                  type="date"
+                  value={currentNode.sDate}
+                  onChange={(e) => updateNode(currentNode.id, { sDate: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500">E. Date</label>
+                <input
+                  type="date"
+                  value={currentNode.eDate}
+                  onChange={(e) => updateNode(currentNode.id, { eDate: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded bg-slate-50 px-2.5 py-1.5 text-xs">
+              <span className="text-slate-600 font-medium">Duration:</span>
+              <span className="font-bold text-slate-900">
+                {dur !== null ? `${dur} Days` : currentNode.status === 'ongoing' ? 'On-going' : '-'}
+              </span>
+            </div>
+
+            {/* GPS Coordinates */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div>
+                <label className="block text-[10px] text-slate-500">Latitude</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={currentNode.lat}
+                  onChange={(e) =>
+                    updateNode(currentNode.id, { lat: Number(e.target.value) || currentNode.lat })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-[11px] font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-500">Longitude</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={currentNode.lon}
+                  onChange={(e) =>
+                    updateNode(currentNode.id, { lon: Number(e.target.value) || currentNode.lon })
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-[11px] font-mono"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 3. MAP STYLE + KML/KMZ UPLOAD */}
+          <MapConfigAndKmlBox
+            sectionLabel="WB"
+            settings={state.settings}
+            overlays={wb.customKmlLines || []}
+            lang={lang}
+            onUpdateSettings={onUpdateSettings}
+            onAddOverlays={(lines) =>
+              onUpdateWb((prev) => ({
+                ...prev,
+                customKmlLines: [...(prev.customKmlLines || []), ...lines],
+              }))
+            }
+            onClearOverlays={() =>
+              onUpdateWb((prev) => ({ ...prev, customKmlLines: [] }))
+            }
+            onReplaceCoordinates={(pts) => {
+              let rawTotal = 0;
+              for (let i = 1; i < pts.length; i++) {
+                rawTotal += haversineMeters(
+                  pts[i - 1].lat,
+                  pts[i - 1].lon,
+                  pts[i].lat,
+                  pts[i].lon
+                );
+              }
+              const nextTotal = Math.round(rawTotal) || prevTotalFallback(wb.totalLengthM);
+              const newNodes: WbNodeRecord[] = pts.map((p, idx) => ({
+                id: p.name || `WB${idx + 1}`,
+                index: idx + 1,
+                lat: p.lat,
+                lon: p.lon,
+                chainageM: 0,
+                status: 'remaining',
+                sDate: '',
+                eDate: '',
+                note: '',
+              }));
+              onUpdateWb((prev) => ({
+                ...prev,
+                totalLengthM: nextTotal,
+                completedLengthM: Math.min(prev.completedLengthM, nextTotal),
+                nodes: recomputeWbChainages(newNodes, nextTotal),
+              }));
+            }}
+          />
+        </div>
+      )}
+
+      {tab === 'table' && (
+        <div className="flex flex-1 flex-col overflow-hidden p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search WB1..WB38..."
+                className="w-full rounded-md border border-slate-300 pl-8 pr-2 py-1.5 text-xs"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as 'all' | WorkStatus)}
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium"
+            >
+              <option value="all">All ({wb.nodes.length})</option>
+              <option value="complete">Complete</option>
+              <option value="ongoing">On-going</option>
+              <option value="remaining">Remaining</option>
+            </select>
+          </div>
+
+          <div className="flex-1 overflow-y-auto rounded-lg border border-slate-200">
+            <table className="w-full text-left text-[11px]">
+              <thead className="sticky top-0 bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                  <th className="px-2 py-1.5">Node</th>
+                  <th className="px-1.5 py-1.5">Ch (m)</th>
+                  <th className="px-1.5 py-1.5">Status</th>
+                  <th className="px-1.5 py-1.5">Dates</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredNodes.map((n) => {
+                  const isSel = n.id === currentNode?.id;
+                  return (
+                    <tr
+                      key={n.id}
+                      onClick={() => onSelectNode(n.id)}
+                      className={`cursor-pointer hover:bg-blue-50 ${isSel ? 'bg-blue-50/90' : ''}`}
+                    >
+                      <td className="px-2 py-1.5 font-bold text-slate-900">{n.id}</td>
+                      <td className="px-1.5 py-1.5 font-mono text-slate-600">
+                        {n.chainageM.toFixed(1)}
+                      </td>
+                      <td className="px-1.5 py-1.5">
+                        <select
+                          value={n.status}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            updateNode(n.id, { status: e.target.value as WorkStatus })
+                          }
+                          className={`rounded border px-1 py-0.5 text-[10px] font-bold ${
+                            n.status === 'complete'
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                              : n.status === 'ongoing'
+                              ? 'border-amber-300 bg-amber-50 text-amber-800'
+                              : 'border-rose-300 bg-rose-50 text-rose-800'
+                          }`}
+                        >
+                          <option value="complete">Done</option>
+                          <option value="ongoing">On-going</option>
+                          <option value="remaining">Rem</option>
+                        </select>
+                      </td>
+                      <td className="px-1.5 py-1.5 text-[10px] text-slate-500">
+                        {formatDateDisplay(n.sDate) || '-'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+};
+
+function prevTotalFallback(val: number): number {
+  return val > 0 ? val : 1650;
+}
+
+export function applyKmlToWc(
+  prev: WcSectionData,
+  pts: Array<{ name: string; lat: number; lon: number }>
+): WcSectionData {
+  const nextNodes = pts.map((p, i) => ({
+    id: p.name.startsWith('WC') ? p.name : `WC-${i + 1}`,
+    index: i + 1,
+    lat: p.lat,
+    lon: p.lon,
+  }));
+  // Also update shaft coordinates/lengths if counts match or resize smoothly
+  const updatedShafts = nextNodes.map((gn, idx) => {
+    const existing = prev.shafts[idx];
+    const nextPt = nextNodes[idx + 1];
+    const segLen =
+      nextPt && existing
+        ? Number(haversineMeters(gn.lat, gn.lon, nextPt.lat, nextPt.lon).toFixed(1)) ||
+          existing.tunnelLengthM
+        : existing?.tunnelLengthM ?? 0;
+
+    if (existing) {
+      return {
+        ...existing,
+        id: gn.id,
+        nextId: nextPt ? nextPt.id : 'END',
+        tunnelLengthM: segLen,
+      };
+    }
+    return {
+      index: idx + 1,
+      id: gn.id,
+      nextId: nextPt ? nextPt.id : 'END',
+      shaftSize: '5000x3600',
+      shaftType: idx === 0 ? ('Driving' as const) : ('Receiving/Driving' as const),
+      netHeightMm: 10000,
+      bottomSlabMm: 600,
+      sheetPileStyle: false,
+      totalLayers: 8,
+      layerFlags: Array(8).fill(false),
+      bottomSlabDone: false,
+      shaftSDate: '',
+      shaftEDate: '',
+      castingPct: 0,
+      precastPct: 0,
+      manholeSDate: '',
+      manholeEDate: '',
+      pipeDia: 'DN1800' as const,
+      tunnelLengthM: segLen,
+      tunnelPct: 0,
+      tunnelSDate: '',
+      tunnelEDate: '',
+      isEndNode: idx === nextNodes.length - 1,
+    };
+  });
+
+  return {
+    ...prev,
+    geoNodes: nextNodes,
+    shafts: updatedShafts,
+  };
+}
+
+export { RotateCcw };

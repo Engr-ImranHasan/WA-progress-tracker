@@ -5,11 +5,13 @@ import {
   Download,
   Eye,
   FileCode2,
+  Files,
   FileSpreadsheet,
   FileText,
   FolderOpen,
   Image as ImageIcon,
   Languages,
+  Layers,
   Maximize2,
   Minimize2,
   PanelRightClose,
@@ -25,8 +27,16 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { AppState, SavedProgressFile, ShaftRecord, ViewMode } from './types';
+import {
+  AppState,
+  SavedProgressFile,
+  SectionTab,
+  ShaftRecord,
+  ViewMode,
+  WbSectionData,
+} from './types';
 import { createInitialAppState } from './data/initialWaData';
+import { createInitialWbData, createInitialWcData } from './data/wbcInitialData';
 import {
   computeSummary,
   formatDateDisplay,
@@ -41,13 +51,16 @@ import {
   exportExcelWorkbook,
   exportHighResPng,
   exportJsonBackup,
+  exportMultiPageA1VectorPdf,
   exportSavedFileExcel,
   exportSavedFileJson,
   exportSvgFile,
-  importExcelShafts,
+  importFullExcelWorkbook,
+  preloadSectionMapSnapshots,
 } from './utils/exporters';
 import { A1SheetDrawing } from './components/A1SheetDrawing';
 import { ShaftEditorPanel } from './components/ShaftEditorPanel';
+import { WbEditorPanel } from './components/WbWcEditors';
 
 const STORAGE_KEY = 'wa_progress_studio_v1';
 
@@ -66,6 +79,9 @@ function loadInitialState(): AppState {
 export function App() {
   const [state, setState] = useState<AppState>(loadInitialState);
   const [selectedShaftId, setSelectedShaftId] = useState<string>('WA-1');
+  const [selectedWbNodeId, setSelectedWbNodeId] = useState<string>('WB1');
+  const [selectedWcShaftId, setSelectedWcShaftId] = useState<string>('WC-1');
+  const [combinedEditorTarget, setCombinedEditorTarget] = useState<'wa' | 'wb' | 'wc'>('wa');
   const [focusSection, setFocusSection] = useState<'shaft' | 'manhole' | 'tunnel'>('shaft');
   const [zoom, setZoom] = useState<number>(1);
   const [showInspector, setShowInspector] = useState<boolean>(true);
@@ -80,6 +96,15 @@ export function App() {
   // Saved Files Manager Modal & In-Modal Viewer
   const [filesModalOpen, setFilesModalOpen] = useState<boolean>(false);
   const [previewFile, setPreviewFile] = useState<SavedProgressFile | null>(null);
+  const [previewTab, setPreviewTab] = useState<SectionTab>('combined');
+
+  // Offscreen hidden state for multi-page A1 Vector PDF (WA + WB + WC)
+  const [multiPdfReq, setMultiPdfReq] = useState<{
+    sourceState: AppState;
+    sections: SectionTab[];
+    filename: string;
+  } | null>(null);
+  const multiSvgRefs = useRef<Record<string, SVGSVGElement | null>>({});
 
   const [toastMsg, setToastMsg] = useState<string>('');
   const [exportBusy, setExportBusy] = useState<string>('');
@@ -101,12 +126,52 @@ export function App() {
     }
   }, [state]);
 
+  // Execute multi-page PDF capture once hidden SVGs have rendered
+  useEffect(() => {
+    if (!multiPdfReq) return;
+    let cancelled = false;
+    const run = async () => {
+      try {
+        await preloadSectionMapSnapshots(multiPdfReq.sourceState);
+        // Wait 2 animation frames so React renders cached map snapshots into SVGs
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        if (cancelled) return;
+
+        const els: SVGSVGElement[] = [];
+        for (const sec of multiPdfReq.sections) {
+          const el = multiSvgRefs.current[sec];
+          if (el) els.push(el);
+        }
+        if (els.length > 0) {
+          await exportMultiPageA1VectorPdf(els, multiPdfReq.filename);
+          showToast(
+            isBn
+              ? `${els.length} পৃষ্ঠার A1 Vector PDF (WA+WB+WC) ডাউনলোড হয়েছে!`
+              : `Exported ${els.length}-Page A1 Vector PDF!`
+          );
+        }
+      } catch (err) {
+        console.error(err);
+        showToast(isBn ? 'মাল্টি-পেজ PDF তৈরিতে সমস্যা হয়েছে।' : 'Multi-page PDF failed.');
+      } finally {
+        if (!cancelled) {
+          setExportBusy('');
+          setMultiPdfReq(null);
+        }
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [multiPdfReq, isBn]);
+
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(''), 3400);
   };
 
-  const handleUpdateShaft = (id: string, patch: Partial<ShaftRecord>) => {
+  const handleUpdateWaShaft = (id: string, patch: Partial<ShaftRecord>) => {
     setState((prev) => ({
       ...prev,
       lastSavedAt: new Date().toISOString(),
@@ -114,11 +179,43 @@ export function App() {
     }));
   };
 
+  const handleUpdateWcShaft = (id: string, patch: Partial<ShaftRecord>) => {
+    setState((prev) => ({
+      ...prev,
+      lastSavedAt: new Date().toISOString(),
+      wc: {
+        ...prev.wc,
+        shafts: prev.wc.shafts.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+      },
+    }));
+  };
+
+  const handleUpdateWb = (updater: (wb: WbSectionData) => WbSectionData) => {
+    setState((prev) => ({
+      ...prev,
+      lastSavedAt: new Date().toISOString(),
+      wb: updater(prev.wb),
+    }));
+  };
+
   const displayCtx = resolveDisplayContext(state);
-  const summary = computeSummary(displayCtx.displayShafts, displayCtx.baseline);
+  const waSummary = computeSummary(displayCtx.displayShafts, displayCtx.baseline);
+  const wcSummary = computeSummary(displayCtx.displayWc.shafts);
+  const wbPct =
+    displayCtx.displayWb.totalLengthM > 0
+      ? (displayCtx.displayWb.completedLengthM / displayCtx.displayWb.totalLengthM) * 100
+      : 0;
+
   const editingFile = state.activeLoadedFileId
     ? state.savedFiles.find((f) => f.id === state.activeLoadedFileId) || null
     : null;
+
+  const handleSwitchSection = (sec: SectionTab) => {
+    setState((p) => ({ ...p, activeSection: sec }));
+    if (sec === 'wa') setCombinedEditorTarget('wa');
+    if (sec === 'wb') setCombinedEditorTarget('wb');
+    if (sec === 'wc') setCombinedEditorTarget('wc');
+  };
 
   // Open Save Overall File modal
   const openSaveFileModal = () => {
@@ -128,16 +225,16 @@ export function App() {
       setSaveFileDate(editingFile.date || defaultDate);
       setSaveFileNote(editingFile.note || '');
     } else {
-      setSaveFileName(`WA Progress (${formatDateDisplay(defaultDate)})`);
+      setSaveFileName(`WABC Progress (${formatDateDisplay(defaultDate)})`);
       setSaveFileDate(defaultDate);
       setSaveFileNote('');
     }
     setSaveModalOpen(true);
   };
 
-  // Save as New File or Update Existing File
+  // Save ALL 3 SECTIONS (WA + Pump SPS + WB + WC) in ONE single SavedProgressFile
   const handleSaveFile = (mode: 'new' | 'update') => {
-    const cleanName = saveFileName.trim() || `WA Progress (${formatDateDisplay(saveFileDate)})`;
+    const cleanName = saveFileName.trim() || `WABC Progress (${formatDateDisplay(saveFileDate)})`;
     const cleanDate = saveFileDate || state.settings.reportDate;
     const nowIso = new Date().toISOString();
 
@@ -155,6 +252,8 @@ export function App() {
                 updatedAt: nowIso,
                 shafts: JSON.parse(JSON.stringify(prev.shafts)),
                 pumpStation: JSON.parse(JSON.stringify(prev.pumpStation)),
+                wb: JSON.parse(JSON.stringify(prev.wb)),
+                wc: JSON.parse(JSON.stringify(prev.wc)),
               }
             : f
         ),
@@ -162,8 +261,8 @@ export function App() {
       setSaveModalOpen(false);
       showToast(
         isBn
-          ? `"${cleanName}" ফাইল আপডেট সেভ হয়েছে!`
-          : `Updated saved file "${cleanName}"!`
+          ? `"${cleanName}" (WA+WB+WC একসাথে) আপডেট সেভ হয়েছে!`
+          : `Updated saved file "${cleanName}" (WA+WB+WC)!`
       );
       return;
     }
@@ -177,6 +276,8 @@ export function App() {
       updatedAt: nowIso,
       shafts: JSON.parse(JSON.stringify(state.shafts)),
       pumpStation: JSON.parse(JSON.stringify(state.pumpStation)),
+      wb: JSON.parse(JSON.stringify(state.wb)),
+      wc: JSON.parse(JSON.stringify(state.wc)),
     };
 
     setState((prev) => ({
@@ -188,12 +289,12 @@ export function App() {
     setSaveModalOpen(false);
     showToast(
       isBn
-        ? `"${cleanName}" (${formatDateDisplay(cleanDate)}) সেভ করা হয়েছে!`
-        : `Saved "${cleanName}" (${formatDateDisplay(cleanDate)})!`
+        ? `"${cleanName}" (${formatDateDisplay(cleanDate)}) — ৩টি সেকশন এক ফাইলে সেভ হয়েছে!`
+        : `Saved "${cleanName}" (${formatDateDisplay(cleanDate)}) with WA, WB & WC!`
     );
   };
 
-  // Load a saved file into Overall editor for editing
+  // Load a saved file (all 3 sections WA + WB + WC) into workspace editor
   const handleEditSavedFile = (file: SavedProgressFile) => {
     setState((prev) => ({
       ...prev,
@@ -202,6 +303,8 @@ export function App() {
       activeLoadedFileId: file.id,
       shafts: JSON.parse(JSON.stringify(file.shafts)),
       pumpStation: JSON.parse(JSON.stringify(file.pumpStation)),
+      wb: JSON.parse(JSON.stringify(file.wb || createInitialWbData())),
+      wc: JSON.parse(JSON.stringify(file.wc || createInitialWcData())),
       settings: {
         ...prev.settings,
         reportDate: file.date || prev.settings.reportDate,
@@ -211,8 +314,8 @@ export function App() {
     setFilesModalOpen(false);
     showToast(
       isBn
-        ? `"${file.name}" এডিট করার জন্য লোড হয়েছে। পরিবর্তন শেষে Save বাটনে আপডেট করুন।`
-        : `Loaded "${file.name}" into editor. Click Save when done.`
+        ? `"${file.name}" (WA+WB+WC) এডিট করার জন্য লোড হয়েছে!`
+        : `Loaded "${file.name}" (WA+WB+WC) into editor!`
     );
   };
 
@@ -268,6 +371,23 @@ export function App() {
     showToast(isBn ? 'ফাইলটি মুছে ফেলা হয়েছে।' : 'File deleted.');
   };
 
+  const startMultiPagePdfExport = (
+    sections: SectionTab[],
+    sourceState: AppState = state,
+    customTag?: string
+  ) => {
+    setShowExportMenu(false);
+    const dateTag = customTag || sourceState.settings.reportDate || 'report';
+    setExportBusy(
+      isBn ? `${sections.length} পৃষ্ঠার A1 PDF তৈরি হচ্ছে...` : `Building ${sections.length}-Page A1 PDF...`
+    );
+    setMultiPdfReq({
+      sourceState,
+      sections,
+      filename: `WABC-Progress-${sections.length}Pages-A1-${dateTag}.pdf`,
+    });
+  };
+
   const handleExport = async (
     kind: 'pdf' | 'png' | 'svg' | 'dxf' | 'xlsx' | 'json' | 'print',
     customSvg?: SVGSVGElement | null,
@@ -275,46 +395,47 @@ export function App() {
   ) => {
     setShowExportMenu(false);
     const dateTag = customLabel || state.settings.reportDate || 'report';
-    const modeTag = customLabel ? 'saved' : state.viewMode;
+    const secTag = customLabel ? 'saved' : `${state.activeSection}-${state.viewMode}`;
     try {
       if (kind === 'print') {
         window.print();
         return;
       }
       if (kind === 'xlsx') {
-        exportExcelWorkbook(state, `WA-Progress-${modeTag}-${dateTag}.xlsx`);
-        showToast(isBn ? 'Excel (.xlsx) ডাউনলোড হয়েছে!' : 'Excel exported!');
+        exportExcelWorkbook(state, `WABC-Progress-${state.viewMode}-${dateTag}.xlsx`);
+        showToast(isBn ? 'Excel (.xlsx) — সব শীট ডাউনলোড হয়েছে!' : 'Multi-sheet Excel exported!');
         return;
       }
       if (kind === 'json') {
-        exportJsonBackup(state, `WA-Progress-Backup-${dateTag}.json`);
+        exportJsonBackup(state, `WABC-Progress-Backup-${dateTag}.json`);
         showToast(isBn ? 'JSON ব্যাকআপ সেভ হয়েছে!' : 'JSON backup saved!');
         return;
       }
       if (kind === 'dxf') {
-        exportAutoCadDxf(state, `WA-Progress-A1-${modeTag}-${dateTag}.dxf`);
+        exportAutoCadDxf(state, `WABC-Progress-A1-${secTag}-${dateTag}.dxf`);
         showToast(isBn ? 'AutoCAD DXF এক্সপোর্ট হয়েছে!' : 'AutoCAD DXF exported!');
         return;
       }
       const targetSvg = customSvg || svgRef.current;
       if (!targetSvg) return;
       if (kind === 'svg') {
-        exportSvgFile(targetSvg, `WA-Progress-A1-${modeTag}-${dateTag}.svg`);
+        exportSvgFile(targetSvg, `WABC-Progress-A1-${secTag}-${dateTag}.svg`);
         showToast(isBn ? 'Vector SVG ডাউনলোড হয়েছে!' : 'SVG exported!');
         return;
       }
       if (kind === 'pdf') {
         setExportBusy(isBn ? 'A1 PDF তৈরি হচ্ছে...' : 'Generating A1 Vector PDF...');
+        await preloadSectionMapSnapshots(state);
         await exportA1VectorPdf(
           targetSvg,
-          `WA-Progress-A1-${modeTag}-${dateTag}.pdf`
+          `WABC-Progress-A1-${secTag}-${dateTag}.pdf`
         );
         showToast(isBn ? 'A1 Vector PDF ডাউনলোড হয়েছে!' : 'A1 Vector PDF exported!');
       } else if (kind === 'png') {
         setExportBusy(isBn ? 'High-Res PNG তৈরি হচ্ছে...' : 'Rendering High-Res PNG...');
         await exportHighResPng(
           targetSvg,
-          `WA-Progress-A1-${modeTag}-${dateTag}.png`
+          `WABC-Progress-A1-${secTag}-${dateTag}.png`
         );
         showToast(isBn ? 'High-Res PNG ডাউনলোড হয়েছে!' : 'PNG exported!');
       }
@@ -331,16 +452,18 @@ export function App() {
     e.target.value = '';
     if (!file) return;
     try {
-      const updatedShafts = await importExcelShafts(file, state.shafts);
+      const imported = await importFullExcelWorkbook(file, state);
       setState((prev) => ({
         ...prev,
         lastSavedAt: new Date().toISOString(),
-        shafts: updatedShafts,
+        shafts: imported.shafts,
+        wb: imported.wb,
+        wc: imported.wc,
       }));
       showToast(
         isBn
-          ? 'Excel থেকে সব ডাটা ইমপোর্ট ও অটো-সেভ হয়েছে!'
-          : 'Excel imported & auto-saved!'
+          ? 'Excel থেকে WA, WB ও WC ডাটা ইমপোর্ট ও অটো-সেভ হয়েছে!'
+          : 'Excel (WA/WB/WC) imported & auto-saved!'
       );
     } catch (err) {
       console.error(err);
@@ -370,7 +493,7 @@ export function App() {
       window.confirm(
         isBn
           ? 'আপনি কি নিশ্চিত যে আপনার সব এডিট মুছে মূল PDF-এর অবস্থায় ফিরে যেতে চান?'
-          : 'Reset all data back to the initial PDF baseline?'
+          : 'Reset all sections (WA, WB, WC) back to the initial PDF baseline?'
       )
     ) {
       const fresh = createInitialAppState();
@@ -408,9 +531,12 @@ export function App() {
   const previewState: AppState | null = previewFile
     ? {
         ...state,
+        activeSection: previewTab,
         viewMode: 'overall',
         shafts: previewFile.shafts,
         pumpStation: previewFile.pumpStation,
+        wb: previewFile.wb || createInitialWbData(),
+        wc: previewFile.wc || createInitialWcData(),
         settings: {
           ...state.settings,
           reportDate: previewFile.date || state.settings.reportDate,
@@ -418,6 +544,24 @@ export function App() {
         },
       }
     : null;
+
+  // Determine which right-side inspector to display
+  const activeInspectorMode: 'wa' | 'wb' | 'wc' =
+    state.activeSection === 'wb'
+      ? 'wb'
+      : state.activeSection === 'wc'
+      ? 'wc'
+      : state.activeSection === 'combined'
+      ? combinedEditorTarget
+      : 'wa';
+
+  // Active selection ring on drawing
+  const activeDrawingSelectionId =
+    activeInspectorMode === 'wb'
+      ? selectedWbNodeId
+      : activeInspectorMode === 'wc'
+      ? selectedWcShaftId
+      : selectedShaftId;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-slate-100 text-slate-900">
@@ -440,42 +584,62 @@ export function App() {
       {/* ==================== TOP HEADER TOOLBAR ==================== */}
       <header className="no-print z-30 flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-slate-900 px-3 py-2 text-white shadow-sm">
         {/* Brand & Autosave Status */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wider">
             A1 CAD
           </span>
-          <h1 className="text-sm font-bold tracking-tight">WA Progress Studio</h1>
-          <span className="hidden md:inline-flex items-center gap-1 rounded-full bg-emerald-950/90 border border-emerald-500/40 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+          <h1 className="text-sm font-bold tracking-tight">WABC Progress Studio</h1>
+          <span className="hidden xl:inline-flex items-center gap-1 rounded-full bg-emerald-950/90 border border-emerald-500/40 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
             <Check className="h-3 w-3" />
             {isBn ? 'অটো-সেভড' : 'Auto-saved'} {savedTimeStr}
           </span>
+        </div>
+
+        {/* Section Tabs: WA | WB | WC | Combined */}
+        <div className="flex items-center gap-1 rounded-lg bg-slate-800 p-1">
+          {(
+            [
+              { id: 'wa', label: 'WA', sub: '37 + SPS' },
+              { id: 'wb', label: 'WB', sub: 'Open Cut' },
+              { id: 'wc', label: 'WC', sub: '27 Shafts' },
+              { id: 'combined', label: isBn ? 'Combined (একসাথে)' : 'Combined', sub: 'WA+WB+WC' },
+            ] as { id: SectionTab; label: string; sub: string }[]
+          ).map((tab) => {
+            const active = state.activeSection === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleSwitchSection(tab.id)}
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold transition ${
+                  active
+                    ? tab.id === 'combined'
+                      ? 'bg-indigo-500 text-white shadow'
+                      : 'bg-blue-500 text-white shadow'
+                    : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className="hidden md:inline text-[10px] font-normal opacity-85">
+                  ({tab.sub})
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* View Mode Switcher (Overall / Weekly / Monthly) */}
         <div className="flex items-center gap-1 rounded-lg bg-slate-800 p-1">
           {(
             [
-              {
-                id: 'overall',
-                bn: 'সামগ্রিক (Overall)',
-                en: 'Overall Status',
-              },
-              {
-                id: 'weekly',
-                bn: 'সাপ্তাহিক (Weekly)',
-                en: 'Weekly Compare',
-              },
-              {
-                id: 'monthly',
-                bn: 'মাসিক (Monthly)',
-                en: 'Monthly Compare',
-              },
+              { id: 'overall', bn: 'সামগ্রিক', en: 'Overall' },
+              { id: 'weekly', bn: 'সাপ্তাহিক', en: 'Weekly' },
+              { id: 'monthly', bn: 'মাসিক', en: 'Monthly' },
             ] as { id: ViewMode; bn: string; en: string }[]
           ).map((m) => (
             <button
               key={m.id}
               onClick={() => setState((p) => ({ ...p, viewMode: m.id }))}
-              className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+              className={`rounded-md px-2 py-1 text-xs font-semibold transition ${
                 state.viewMode === m.id
                   ? m.id === 'weekly'
                     ? 'bg-amber-500 text-slate-950 shadow'
@@ -490,54 +654,61 @@ export function App() {
           ))}
         </div>
 
-        {/* Action Buttons: Save File, Saved Files Manager, Export, Lang, Panel */}
+        {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {/* Save Overall with Name & Date */}
+          {/* Save Overall (WA+WB+WC in 1 File) */}
           <button
             onClick={openSaveFileModal}
-            className="flex items-center gap-1.5 rounded-md bg-emerald-500 px-2.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition"
+            className="flex items-center gap-1 rounded-md bg-emerald-500 px-2.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition"
             title={
               isBn
-                ? 'বর্তমান প্রোগ্রেস নাম ও তারিখ দিয়ে সেভ করুন'
-                : 'Save Overall progress with Name & Date'
+                ? 'WA, WB ও WC — ৩টি পেজ একসাথে নাম ও তারিখ দিয়ে সেভ করুন'
+                : 'Save all 3 sections (WA+WB+WC) into one file'
             }
           >
             <Save className="h-3.5 w-3.5" />
             {isBn ? 'ফাইল সেভ' : 'Save File'}
           </button>
 
-          {/* Saved Files Manager Button */}
+          {/* Saved Files Manager */}
           <button
             onClick={() => setFilesModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-md border border-indigo-400/50 bg-indigo-600/90 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 transition"
-            title={
-              isBn
-                ? 'সব সেভ করা ফাইল দেখুন, এডিট ও ডাউনলোড করুন'
-                : 'View, Edit & Download all saved files'
-            }
+            className="flex items-center gap-1 rounded-md border border-indigo-400/50 bg-indigo-600/90 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 transition"
           >
             <FolderOpen className="h-3.5 w-3.5" />
-            {isBn ? `সেভ করা ফাইল (${state.savedFiles.length})` : `Saved Files (${state.savedFiles.length})`}
+            {isBn ? `ফাইল (${state.savedFiles.length})` : `Files (${state.savedFiles.length})`}
           </button>
 
-          {/* Direct A1 PDF quick button */}
+          {/* Direct A1 PDF (Current Sheet) */}
           <button
             onClick={() => handleExport('pdf')}
             disabled={Boolean(exportBusy)}
             className="flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-blue-500 transition disabled:opacity-50"
+            title="Export current view as A1 Vector PDF"
           >
             <FileText className="h-3.5 w-3.5" />
             {exportBusy ? exportBusy : 'A1 PDF'}
           </button>
 
-          {/* More Exports & Excel/Backup Menu */}
+          {/* 3-Page A1 PDF (WA + WB + WC) */}
+          <button
+            onClick={() => startMultiPagePdfExport(['wa', 'wb', 'wc'])}
+            disabled={Boolean(exportBusy)}
+            className="hidden sm:flex items-center gap-1 rounded-md border border-blue-400/60 bg-blue-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition disabled:opacity-50"
+            title="Export all 3 pages (WA + WB + WC) into one A1 Vector PDF"
+          >
+            <Files className="h-3.5 w-3.5" />
+            3-Page PDF
+          </button>
+
+          {/* Export / Import Menu */}
           <div className="relative">
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               className="flex items-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-xs font-semibold hover:bg-slate-700"
             >
               <Download className="h-3.5 w-3.5" />
-              {isBn ? 'এক্সপোর্ট / ইমপোর্ট' : 'Export / Sync'}
+              {isBn ? 'এক্সপোর্ট' : 'Export'}
             </button>
 
             {showExportMenu && (
@@ -546,7 +717,7 @@ export function App() {
                   className="fixed inset-0 z-40"
                   onClick={() => setShowExportMenu(false)}
                 />
-                <div className="absolute right-0 mt-1.5 z-50 w-64 rounded-lg border border-slate-200 bg-white py-1.5 text-slate-800 shadow-xl text-xs">
+                <div className="absolute right-0 mt-1.5 z-50 w-72 rounded-lg border border-slate-200 bg-white py-1.5 text-slate-800 shadow-xl text-xs">
                   <div className="px-3 py-1 text-[10px] font-bold uppercase text-slate-400">
                     {isBn ? 'A1 প্রিন্ট ও ড্রয়িং এক্সপোর্ট' : 'A1 Drawing Exports'}
                   </div>
@@ -554,7 +725,19 @@ export function App() {
                     onClick={() => handleExport('pdf')}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-blue-50 font-semibold text-blue-700"
                   >
-                    <FileText className="h-4 w-4" /> A1 Vector PDF (841×594mm)
+                    <FileText className="h-4 w-4" /> Current A1 Sheet PDF (841×594mm)
+                  </button>
+                  <button
+                    onClick={() => startMultiPagePdfExport(['wa', 'wb', 'wc'])}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-indigo-50 font-semibold text-indigo-700"
+                  >
+                    <Files className="h-4 w-4" /> 3-Page A1 PDF (WA + WB + WC)
+                  </button>
+                  <button
+                    onClick={() => startMultiPagePdfExport(['wa', 'wb', 'wc', 'combined'])}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-indigo-50 text-indigo-700"
+                  >
+                    <Layers className="h-4 w-4" /> 4-Page A1 PDF (WA+WB+WC+Combined)
                   </button>
                   <button
                     onClick={() => handleExport('print')}
@@ -583,13 +766,13 @@ export function App() {
 
                   <div className="my-1 border-t border-slate-100" />
                   <div className="px-3 py-1 text-[10px] font-bold uppercase text-slate-400">
-                    {isBn ? 'Excel ও ব্যাকআপ' : 'Excel & Data Backup'}
+                    {isBn ? 'Excel ও ব্যাকআপ (WA+WB+WC)' : 'Excel & Data Backup (WA+WB+WC)'}
                   </div>
                   <button
                     onClick={() => handleExport('xlsx')}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-emerald-50 text-emerald-800 font-medium"
                   >
-                    <FileSpreadsheet className="h-4 w-4" /> Export Excel (.xlsx)
+                    <FileSpreadsheet className="h-4 w-4" /> Export Excel (5 Sheets .xlsx)
                   </button>
                   <button
                     onClick={() => {
@@ -623,30 +806,28 @@ export function App() {
                     }}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-rose-600 hover:bg-rose-50"
                   >
-                    <RotateCcw className="h-4 w-4" /> Reset to Initial PDF Data
+                    <RotateCcw className="h-4 w-4" /> Reset to Initial PDF Baseline
                   </button>
                 </div>
               </>
             )}
           </div>
 
-          {/* Language Toggle BN / EN */}
+          {/* Language Toggle */}
           <button
             onClick={() =>
               setState((p) => ({ ...p, uiLang: p.uiLang === 'bn' ? 'en' : 'bn' }))
             }
             className="flex items-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs font-semibold hover:bg-slate-700"
-            title="Switch UI Language (বাংলা / English)"
           >
             <Languages className="h-3.5 w-3.5" />
             {isBn ? 'EN' : 'বাংলা'}
           </button>
 
-          {/* Toggle Editor Panel */}
+          {/* Toggle Editor */}
           <button
             onClick={() => setShowInspector(!showInspector)}
             className="rounded-md border border-slate-600 bg-slate-800 p-1.5 hover:bg-slate-700"
-            title={showInspector ? 'Hide Editor' : 'Show Editor'}
           >
             {showInspector ? (
               <PanelRightClose className="h-4 w-4" />
@@ -664,7 +845,7 @@ export function App() {
             <Pencil className="h-3.5 w-3.5 text-indigo-700" />
             <span>
               {isBn ? 'এডিট করছেন:' : 'Editing Saved File:'}{' '}
-              <strong>{editingFile.name}</strong> ({formatDateDisplay(editingFile.date)})
+              <strong>{editingFile.name}</strong> ({formatDateDisplay(editingFile.date)} — WA + WB + WC)
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -706,16 +887,9 @@ export function App() {
                 : 'Monthly 2-File Compare:'}
             </span>
 
-            {/* 1st File Selector (Previous Week / Month) */}
             <div className="flex items-center gap-1.5">
               <label className="font-semibold">
-                {state.viewMode === 'weekly'
-                  ? isBn
-                    ? '১ম (Previous Week):'
-                    : '1st (Prev Week):'
-                  : isBn
-                  ? '১ম (Previous Month):'
-                  : '1st (Prev Month):'}
+                {state.viewMode === 'weekly' ? '1st (Prev Week):' : '1st (Prev Month):'}
               </label>
               <select
                 value={activeCompare.file1Id}
@@ -732,16 +906,9 @@ export function App() {
 
             <ArrowRight className="h-4 w-4 text-slate-500" />
 
-            {/* 2nd File Selector (Last / Updated Report) */}
             <div className="flex items-center gap-1.5">
               <label className="font-semibold">
-                {state.viewMode === 'weekly'
-                  ? isBn
-                    ? '২য় (Last Week / Updated):'
-                    : '2nd (Last Week):'
-                  : isBn
-                  ? '২য় (Updated / Final):'
-                  : '2nd (Final Report):'}
+                {state.viewMode === 'weekly' ? '2nd (Last Week):' : '2nd (Final Report):'}
               </label>
               <select
                 value={activeCompare.file2Id}
@@ -762,16 +929,8 @@ export function App() {
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-white px-2.5 py-0.5 font-bold border border-slate-300 text-slate-900">
-              {state.viewMode === 'weekly'
-                ? isBn
-                  ? 'সাপ্তাহিক অগ্রগতি:'
-                  : 'Weekly Delta:'
-                : isBn
-                ? 'মাসিক অগ্রগতি:'
-                : 'Monthly Delta:'}{' '}
-              +{summary.delta.addedShaftsCompleted} Shafts · +{summary.delta.addedLayers} Layers · +
-              {summary.delta.addedTunnelM.toFixed(1)}m Tunnel · +
-              {summary.delta.addedCastingCompleted + summary.delta.addedPrecastCompleted} MH parts
+              WA: +{waSummary.delta.addedLayers}L · +{waSummary.delta.addedTunnelM.toFixed(1)}m | WB: +
+              {Math.max(0, displayCtx.displayWb.completedLengthM - (displayCtx.baseline.wbCompletedLengthM ?? 0)).toFixed(1)}m
             </span>
           </div>
         </div>
@@ -779,44 +938,35 @@ export function App() {
 
       {/* ==================== LIVE KPI & ZOOM SUB-BAR ==================== */}
       <div className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-1.5 text-xs">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-slate-500">
-              {isBn ? 'Shaft:' : 'Shafts:'}
-            </span>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1">
+            <span className="font-bold text-slate-700">WA:</span>
             <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-bold text-emerald-800">
-              {summary.completedShafts}/37 Done
-            </span>
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-bold text-amber-800">
-              {summary.ongoingShafts} On-going
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-slate-500">
-              {isBn ? 'Manhole:' : 'Manholes:'}
-            </span>
-            <span className="rounded bg-blue-100 px-1.5 py-0.5 font-bold text-blue-800">
-              Cast: {summary.castingCompleteCount}/37 · Ring: {summary.precastCompleteCount}/37
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-slate-500">
-              {isBn ? 'Tunnel:' : 'Tunnel:'}
+              {waSummary.completedShafts}/37 Done
             </span>
             <span className="rounded bg-fuchsia-100 px-1.5 py-0.5 font-bold text-fuchsia-800">
-              {(summary.completedTunnelLengthM / 1000).toFixed(3)} /{' '}
-              {(summary.totalTunnelLengthM / 1000).toFixed(3)} km (
-              {summary.tunnelPctOverall.toFixed(1)}%)
+              {(waSummary.completedTunnelLengthM / 1000).toFixed(2)}/{(waSummary.totalTunnelLengthM / 1000).toFixed(2)} km
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-slate-500">Pump SPS:</span>
+          <div className="flex items-center gap-1">
+            <span className="font-bold text-slate-700">SPS:</span>
             <span className="rounded bg-teal-100 px-1.5 py-0.5 font-bold text-teal-800">
-              Lower {displayCtx.displayPump.layers.filter((l) => l.status === 'complete').length}/5 · MR:{' '}
-              {displayCtx.displayPump.machineRoom.status.toUpperCase()}
+              {displayCtx.displayPump.layers.filter((l) => l.status === 'complete').length}/5 · Sink: {displayCtx.displayPump.sinkingStatus.toUpperCase()}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <span className="font-bold text-slate-700">WB:</span>
+            <span className="rounded bg-blue-100 px-1.5 py-0.5 font-bold text-blue-800">
+              {displayCtx.displayWb.completedLengthM.toFixed(1)}/{displayCtx.displayWb.totalLengthM}m ({wbPct.toFixed(1)}%)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <span className="font-bold text-slate-700">WC:</span>
+            <span className="rounded bg-purple-100 px-1.5 py-0.5 font-bold text-purple-800">
+              {wcSummary.completedShafts}/{wcSummary.totalShafts} ({wcSummary.tunnelPctOverall.toFixed(1)}%)
             </span>
           </div>
         </div>
@@ -867,10 +1017,21 @@ export function App() {
           >
             <A1SheetDrawing
               state={state}
-              selectedShaftId={selectedShaftId}
+              selectedShaftId={activeDrawingSelectionId}
               onSelectShaft={(id, focus) => {
-                setSelectedShaftId(id);
+                if (id.startsWith('WC-')) {
+                  setSelectedWcShaftId(id);
+                  setCombinedEditorTarget('wc');
+                } else {
+                  setSelectedShaftId(id);
+                  setCombinedEditorTarget('wa');
+                }
                 if (focus) setFocusSection(focus);
+                if (!showInspector) setShowInspector(true);
+              }}
+              onSelectWbNode={(nodeId) => {
+                setSelectedWbNodeId(nodeId);
+                setCombinedEditorTarget('wb');
                 if (!showInspector) setShowInspector(true);
               }}
               svgRef={svgRef}
@@ -878,32 +1039,113 @@ export function App() {
           </div>
           <div className="no-print mt-2 text-center text-[11px] text-slate-600">
             {isBn
-              ? 'টিপস: যেকোনো Shaft, Tunnel বা Pump Station-এ ক্লিক করে ডান পাশ থেকে এডিট করুন। সব পরিবর্তন সাথে সাথে ব্রাউজারে অটো-সেভ হয়।'
-              : 'Tip: Click any Shaft, Tunnel bar, or Pump Station on the A1 drawing to edit. All edits auto-save instantaneously.'}
+              ? 'টিপস: যেকোনো WA Shaft, Pump Station, WB নোড বা WC Shaft-এ ক্লিক করে ডান পাশ থেকে এডিট করুন। সব পরিবর্তন অটো-সেভ হয়।'
+              : 'Tip: Click any WA Shaft, Pump Station, WB Node, or WC Shaft on the A1 drawing to edit. All edits auto-save.'}
           </div>
         </main>
 
-        {/* Right: Shaft & Pump Station Editor */}
+        {/* Right: Contextual Section Editor (WA / WB / WC) */}
         {showInspector && (
-          <div className="no-print w-full max-w-[390px] shrink-0 h-full">
-            <ShaftEditorPanel
-              state={state}
-              selectedShaftId={selectedShaftId}
-              onSelectShaft={(id) => setSelectedShaftId(id)}
-              onUpdateShaft={handleUpdateShaft}
-              onUpdateState={(updater) =>
-                setState((prev) => ({
-                  ...updater(prev),
-                  lastSavedAt: new Date().toISOString(),
-                }))
-              }
-              focusSection={focusSection}
-            />
+          <div className="no-print flex w-full max-w-[395px] shrink-0 h-full flex-col border-l border-slate-200 bg-white">
+            {/* In Combined Mode show quick 3-pill target switcher on top of editor */}
+            {state.activeSection === 'combined' && (
+              <div className="grid grid-cols-3 gap-1 border-b border-slate-200 bg-indigo-50 p-1.5 text-[11px] font-bold">
+                {(
+                  [
+                    { id: 'wa', label: 'Edit WA + SPS' },
+                    { id: 'wb', label: 'Edit WB OpenCut' },
+                    { id: 'wc', label: 'Edit WC (27)' },
+                  ] as const
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setCombinedEditorTarget(item.id)}
+                    className={`rounded py-1 transition ${
+                      combinedEditorTarget === item.id
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-white text-indigo-900 border border-indigo-200 hover:bg-indigo-100'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-hidden">
+              {activeInspectorMode === 'wb' ? (
+                <WbEditorPanel
+                  state={state}
+                  selectedNodeId={selectedWbNodeId}
+                  onSelectNode={(id) => setSelectedWbNodeId(id)}
+                  onUpdateWb={handleUpdateWb}
+                  onUpdateSettings={(patch) =>
+                    setState((prev) => ({
+                      ...prev,
+                      lastSavedAt: new Date().toISOString(),
+                      settings: { ...prev.settings, ...patch },
+                    }))
+                  }
+                />
+              ) : (
+                <ShaftEditorPanel
+                  state={state}
+                  sectionTarget={activeInspectorMode === 'wc' ? 'wc' : 'wa'}
+                  selectedShaftId={
+                    activeInspectorMode === 'wc' ? selectedWcShaftId : selectedShaftId
+                  }
+                  onSelectShaft={(id) =>
+                    activeInspectorMode === 'wc'
+                      ? setSelectedWcShaftId(id)
+                      : setSelectedShaftId(id)
+                  }
+                  onUpdateShaft={
+                    activeInspectorMode === 'wc' ? handleUpdateWcShaft : handleUpdateWaShaft
+                  }
+                  onUpdateState={(updater) =>
+                    setState((prev) => ({
+                      ...updater(prev),
+                      lastSavedAt: new Date().toISOString(),
+                    }))
+                  }
+                  focusSection={focusSection}
+                />
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* ==================== SAVE OVERALL FILE MODAL (NAME + DATE) ==================== */}
+      {/* ==================== OFFSCREEN MULTI-PAGE A1 RENDERER FOR 3-PAGE PDF ==================== */}
+      {multiPdfReq && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            left: '-99999px',
+            top: 0,
+            width: '1682px',
+            height: '1188px',
+            pointerEvents: 'none',
+            opacity: 0,
+          }}
+        >
+          {multiPdfReq.sections.map((sec) => (
+            <A1SheetDrawing
+              key={sec}
+              state={multiPdfReq.sourceState}
+              forceSection={sec}
+              selectedShaftId=""
+              onSelectShaft={() => {}}
+              svgRef={(el: SVGSVGElement | null) => {
+                multiSvgRefs.current[sec] = el;
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ==================== SAVE OVERALL FILE MODAL (WA + WB + WC IN 1 FILE) ==================== */}
       {saveModalOpen && (
         <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl space-y-4">
@@ -911,8 +1153,8 @@ export function App() {
               <h2 className="flex items-center gap-2 text-base font-bold text-slate-900">
                 <Save className="h-4 w-4 text-emerald-600" />
                 {isBn
-                  ? 'ফাইল সেভ করুন (নাম ও তারিখ)'
-                  : 'Save Progress File (Name & Date)'}
+                  ? 'ফাইল সেভ করুন (WA + WB + WC একসাথে)'
+                  : 'Save Unified File (WA + WB + WC)'}
               </h2>
               <button
                 onClick={() => setSaveModalOpen(false)}
@@ -924,8 +1166,8 @@ export function App() {
 
             <p className="text-xs text-slate-600 leading-relaxed">
               {isBn
-                ? 'সেভ করা ফাইলটি "সেভ করা ফাইল" বাটনে জমা থাকবে এবং Weekly ও Monthly রিপোর্টে ২টি ফাইল তুলনা করতে ব্যবহার করা যাবে।'
-                : 'Saved files appear in Saved Files and can be selected as File 1 or File 2 in Weekly & Monthly comparison modes.'}
+                ? 'এই একটি ফাইলের ভেতরে WA, WB ও WC — তিনটি পেজের সব তথ্য একসাথে সেভ থাকবে এবং Weekly/Monthly তুলনা ও ৩-পেজ PDF এক্সপোর্টে ব্যবহার করা যাবে।'
+                : 'Saves WA, WB, Pump Station, and WC all inside one single file for viewing, editing, 3-Page PDF export, and Weekly/Monthly comparison.'}
             </p>
 
             <div className="space-y-3 text-xs">
@@ -996,17 +1238,16 @@ export function App() {
       {/* ==================== SAVED FILES MANAGER MODAL (VIEW / EDIT / DOWNLOAD) ==================== */}
       {filesModalOpen && (
         <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 p-4">
-          <div className="flex max-h-[90vh] w-full max-w-5xl flex-col rounded-xl bg-white shadow-2xl overflow-hidden">
-            {/* Modal Header */}
+          <div className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl bg-white shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-900 px-5 py-3 text-white">
               <div className="flex items-center gap-2">
                 <FolderOpen className="h-5 w-5 text-indigo-300" />
                 <h2 className="text-sm font-bold">
                   {previewFile
-                    ? `${isBn ? 'ফাইল প্রিভিউ:' : 'Previewing File:'} ${previewFile.name} (${formatDateDisplay(previewFile.date)})`
+                    ? `${isBn ? 'ফাইল প্রিভিউ:' : 'Previewing:'} ${previewFile.name} (${formatDateDisplay(previewFile.date)})`
                     : isBn
-                    ? `সেভ করা সব ফাইল (${state.savedFiles.length}টি)`
-                    : `All Saved Progress Files (${state.savedFiles.length})`}
+                    ? `সেভ করা সব ফাইল (${state.savedFiles.length}টি — WA+WB+WC)`
+                    : `All Saved Unified Files (${state.savedFiles.length} — WA+WB+WC)`}
                 </h2>
               </div>
               <div className="flex items-center gap-2">
@@ -1030,16 +1271,23 @@ export function App() {
               </div>
             </div>
 
-            {/* Body: either Preview A1 Sheet OR Saved Files List */}
             {previewFile && previewState ? (
               <div className="flex flex-1 flex-col overflow-hidden bg-slate-200">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-white px-4 py-2 text-xs">
-                  <div className="text-slate-700">
-                    <strong>{previewFile.name}</strong> · Date:{' '}
-                    {formatDateDisplay(previewFile.date)}
-                    {previewFile.note && (
-                      <span className="ml-2 text-slate-500">({previewFile.note})</span>
-                    )}
+                  <div className="flex items-center gap-1.5">
+                    {(['wa', 'wb', 'wc', 'combined'] as SectionTab[]).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setPreviewTab(t)}
+                        className={`rounded px-2.5 py-1 font-bold uppercase ${
+                          previewTab === t
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
@@ -1047,7 +1295,19 @@ export function App() {
                       className="flex items-center gap-1 rounded bg-indigo-600 px-2.5 py-1 font-bold text-white hover:bg-indigo-700"
                     >
                       <Pencil className="h-3.5 w-3.5" />
-                      {isBn ? 'এই ফাইল এডিট করুন' : 'Edit This File'}
+                      {isBn ? 'এডিট করুন' : 'Edit'}
+                    </button>
+                    <button
+                      onClick={() =>
+                        startMultiPagePdfExport(
+                          ['wa', 'wb', 'wc'],
+                          previewState,
+                          `${previewFile.date}-${previewFile.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
+                        )
+                      }
+                      className="flex items-center gap-1 rounded bg-blue-700 px-2.5 py-1 font-bold text-white hover:bg-blue-800"
+                    >
+                      <Files className="h-3.5 w-3.5" /> 3-Page PDF
                     </button>
                     <button
                       onClick={() =>
@@ -1059,14 +1319,14 @@ export function App() {
                       }
                       className="flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1 font-bold text-white hover:bg-blue-700"
                     >
-                      <FileText className="h-3.5 w-3.5" /> A1 PDF
+                      <FileText className="h-3.5 w-3.5" /> Current PDF
                     </button>
                     <button
                       onClick={() =>
                         exportSavedFileExcel(
                           previewFile,
                           state.settings,
-                          `WA-${previewFile.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}-${previewFile.date}.xlsx`
+                          `WABC-${previewFile.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}-${previewFile.date}.xlsx`
                         )
                       }
                       className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-bold text-white hover:bg-emerald-700"
@@ -1077,7 +1337,7 @@ export function App() {
                       onClick={() =>
                         exportSavedFileJson(
                           previewFile,
-                          `WA-${previewFile.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}-${previewFile.date}.json`
+                          `WABC-${previewFile.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}-${previewFile.date}.json`
                         )
                       }
                       className="flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 font-semibold text-slate-700 hover:bg-slate-50"
@@ -1090,6 +1350,7 @@ export function App() {
                   <div className="mx-auto max-w-[1400px] bg-white shadow-xl">
                     <A1SheetDrawing
                       state={previewState}
+                      forceSection={previewTab}
                       selectedShaftId=""
                       onSelectShaft={() => {}}
                       svgRef={previewSvgRef}
@@ -1102,8 +1363,8 @@ export function App() {
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
                   <span>
                     {isBn
-                      ? 'এখান থেকে আগের যেকোনো সেভ করা ফাইল View (দেখা), Edit (এডিট), এবং Download (PDF / Excel / JSON) করতে পারবেন।'
-                      : 'View, Edit, or Download (PDF / Excel / JSON) any saved progress file below.'}
+                      ? 'প্রতিটি সেভ করা ফাইলের ভেতর WA, WB ও WC — তিনটি পেজই সংরক্ষিত আছে। যেকোনো ফাইল View, Edit বা 3-Page PDF/Excel ডাউনলোড করতে পারেন।'
+                      : 'Each saved file stores all 3 sections (WA + WB + WC) together. View, Edit, or Download 3-Page PDF / Multi-sheet Excel.'}
                   </span>
                   <button
                     onClick={() => {
@@ -1113,12 +1374,15 @@ export function App() {
                     className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-bold text-white hover:bg-emerald-700"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    {isBn ? 'বর্তমান অবস্থা নতুন ফাইল হিসেবে সেভ' : 'Save Current Workspace'}
+                    {isBn ? 'বর্তমান অবস্থা সেভ করুন' : 'Save Current Workspace'}
                   </button>
                 </div>
 
                 {state.savedFiles.map((file) => {
                   const fSum = computeSummary(file.shafts);
+                  const fWb = file.wb || createInitialWbData();
+                  const fWc = file.wc || createInitialWcData();
+                  const fWcSum = computeSummary(fWc.shafts);
                   const lowerPumpDone = file.pumpStation.layers.filter(
                     (l) => l.status === 'complete'
                   ).length;
@@ -1152,25 +1416,27 @@ export function App() {
                           )}
                           <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
                             <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 font-semibold text-emerald-800">
-                              Shafts: {fSum.completedShafts}/37 Done ({fSum.ongoingShafts} On-going)
-                            </span>
-                            <span className="rounded bg-blue-50 border border-blue-200 px-2 py-0.5 font-semibold text-blue-800">
-                              Manhole: Cast {fSum.castingCompleteCount}/37 · Ring {fSum.precastCompleteCount}/37
-                            </span>
-                            <span className="rounded bg-fuchsia-50 border border-fuchsia-200 px-2 py-0.5 font-semibold text-fuchsia-800">
-                              Tunnel: {(fSum.completedTunnelLengthM / 1000).toFixed(3)} km ({fSum.tunnelPctOverall.toFixed(1)}%)
+                              WA: {fSum.completedShafts}/37 · {(fSum.completedTunnelLengthM / 1000).toFixed(3)} km
                             </span>
                             <span className="rounded bg-teal-50 border border-teal-200 px-2 py-0.5 font-semibold text-teal-800">
-                              Pump: {lowerPumpDone}/5 ({getPumpLowerStatus(file.pumpStation)}) · MR: {file.pumpStation.machineRoom.status}
+                              SPS: {lowerPumpDone}/5 · Sink: {file.pumpStation.sinkingStatus || 'ongoing'}
+                            </span>
+                            <span className="rounded bg-blue-50 border border-blue-200 px-2 py-0.5 font-semibold text-blue-800">
+                              WB: {fWb.completedLengthM.toFixed(1)}/{fWb.totalLengthM} m
+                            </span>
+                            <span className="rounded bg-purple-50 border border-purple-200 px-2 py-0.5 font-semibold text-purple-800">
+                              WC: {fWcSum.completedShafts}/{fWcSum.totalShafts} ({fWcSum.tunnelPctOverall.toFixed(1)}%)
                             </span>
                           </div>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-1.5 text-xs">
                           <button
-                            onClick={() => setPreviewFile(file)}
+                            onClick={() => {
+                              setPreviewTab('combined');
+                              setPreviewFile(file);
+                            }}
                             className="flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 font-bold text-blue-800 hover:bg-blue-100"
-                            title="View Full A1 Drawing & PDF"
                           >
                             <Eye className="h-3.5 w-3.5" />
                             {isBn ? 'দেখুন (View)' : 'View'}
@@ -1179,7 +1445,6 @@ export function App() {
                           <button
                             onClick={() => handleEditSavedFile(file)}
                             className="flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 font-bold text-indigo-800 hover:bg-indigo-100"
-                            title="Load into Editor"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                             {isBn ? 'এডিট (Edit)' : 'Edit'}
@@ -1190,14 +1455,13 @@ export function App() {
                               exportSavedFileExcel(
                                 file,
                                 state.settings,
-                                `WA-${safeSlug}-${file.date}.xlsx`
+                                `WABC-${safeSlug}-${file.date}.xlsx`
                               );
                               showToast(
                                 isBn ? `"${file.name}" Excel ডাউনলোড হয়েছে!` : 'Excel downloaded!'
                               );
                             }}
                             className="flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 font-bold text-emerald-800 hover:bg-emerald-100"
-                            title="Download Excel (.xlsx)"
                           >
                             <Download className="h-3.5 w-3.5" />
                             Excel
@@ -1205,13 +1469,12 @@ export function App() {
 
                           <button
                             onClick={() => {
-                              exportSavedFileJson(file, `WA-${safeSlug}-${file.date}.json`);
+                              exportSavedFileJson(file, `WABC-${safeSlug}-${file.date}.json`);
                               showToast(
                                 isBn ? `"${file.name}" JSON ডাউনলোড হয়েছে!` : 'JSON downloaded!'
                               );
                             }}
                             className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 font-semibold text-slate-700 hover:bg-slate-100"
-                            title="Download JSON"
                           >
                             JSON
                           </button>

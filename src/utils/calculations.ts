@@ -5,8 +5,12 @@ import {
   SavedProgressFile,
   ShaftRecord,
   ShaftSnapshotItem,
+  WbNodeRecord,
+  WbSectionData,
+  WcSectionData,
   WorkStatus,
 } from '../types';
+import { haversineMeters } from '../data/wbcInitialData';
 
 export const LIVE_WORKSPACE_ID = '__LIVE__';
 
@@ -28,10 +32,6 @@ export function parseDateInput(val: string): string {
   return '';
 }
 
-/**
- * Inclusive engineering day count matching original AutoCAD table:
- * e.g. 04/07/2026 to 10/07/2026 = 07 Days
- */
 export function calcDurationDays(sDate: string, eDate: string): number | null {
   if (!sDate || !eDate) return null;
   const s = new Date(`${sDate}T00:00:00Z`).getTime();
@@ -97,12 +97,36 @@ export function getPumpLowerStatus(ps: PumpStationData): WorkStatus {
   return anyStarted ? 'ongoing' : 'remaining';
 }
 
+export function recomputeWbChainages(
+  nodes: WbNodeRecord[],
+  totalLengthM: number
+): WbNodeRecord[] {
+  if (nodes.length === 0) return [];
+  const rawCum: number[] = [0];
+  for (let i = 1; i < nodes.length; i++) {
+    rawCum.push(
+      rawCum[i - 1] +
+        haversineMeters(nodes[i - 1].lat, nodes[i - 1].lon, nodes[i].lat, nodes[i].lon)
+    );
+  }
+  const rawTotal = rawCum[rawCum.length - 1] || 1;
+  const scale = totalLengthM > 0 ? totalLengthM / rawTotal : 1;
+  return nodes.map((n, i) => ({
+    ...n,
+    index: i + 1,
+    chainageM: Number((rawCum[i] * scale).toFixed(1)),
+  }));
+}
+
 export function createSnapshotFromState(
   shafts: ShaftRecord[],
   pumpLayersDone: boolean[],
   label: string,
   date: string,
-  pumpMachineRoomStatus?: WorkStatus
+  pumpMachineRoomStatus?: WorkStatus,
+  pumpSinkingStatus?: WorkStatus,
+  wb?: WbSectionData,
+  wc?: WcSectionData
 ): PeriodBaseline {
   const map: Record<string, ShaftSnapshotItem> = {};
   for (const s of shafts) {
@@ -114,6 +138,24 @@ export function createSnapshotFromState(
       tunnelPct: s.tunnelPct,
     };
   }
+  const wcMap: Record<string, ShaftSnapshotItem> = {};
+  if (wc) {
+    for (const s of wc.shafts) {
+      wcMap[s.id] = {
+        layerFlags: s.layerFlags.slice(0, s.totalLayers),
+        bottomSlabDone: s.bottomSlabDone,
+        castingPct: s.castingPct,
+        precastPct: s.precastPct,
+        tunnelPct: s.tunnelPct,
+      };
+    }
+  }
+  const wbNodesStatus: Record<string, WorkStatus> = {};
+  if (wb) {
+    for (const n of wb.nodes) {
+      wbNodesStatus[n.id] = n.status;
+    }
+  }
   return {
     label,
     date,
@@ -121,6 +163,10 @@ export function createSnapshotFromState(
     shafts: map,
     pumpLayersDone: [...pumpLayersDone],
     pumpMachineRoomStatus,
+    pumpSinkingStatus,
+    wbCompletedLengthM: wb?.completedLengthM,
+    wbNodesStatus,
+    wcShafts: wcMap,
   };
 }
 
@@ -130,7 +176,10 @@ export function snapshotFromSavedFile(file: SavedProgressFile): PeriodBaseline {
     file.pumpStation.layers.map((l) => l.status === 'complete'),
     `${file.name} (${formatDateDisplay(file.date)})`,
     file.date,
-    file.pumpStation.machineRoom.status
+    file.pumpStation.machineRoom.status,
+    file.pumpStation.sinkingStatus,
+    file.wb,
+    file.wc
   );
 }
 
@@ -151,11 +200,7 @@ export interface ProgressSummary {
   completedTunnelLengthM: number;
   tunnelPctOverall: number;
 
-  byDia: {
-    DN900: { totalM: number; completedM: number };
-    DN1100: { totalM: number; completedM: number };
-    DN1600: { totalM: number; completedM: number };
-  };
+  byDia: Record<string, { totalM: number; completedM: number }>;
 
   delta: {
     addedLayers: number;
@@ -170,7 +215,8 @@ export interface ProgressSummary {
 export function computeSummary(
   shafts: ShaftRecord[],
   baseline?: PeriodBaseline,
-  pumpStation?: PumpStationData
+  pumpStation?: PumpStationData,
+  baselineShaftOverride?: Record<string, ShaftSnapshotItem>
 ): ProgressSummary {
   let completedShafts = 0;
   let ongoingShafts = 0;
@@ -185,10 +231,13 @@ export function computeSummary(
   let totalTunnelLengthM = 0;
   let completedTunnelLengthM = 0;
 
-  const byDia = {
+  const byDia: Record<string, { totalM: number; completedM: number }> = {
     DN900: { totalM: 0, completedM: 0 },
     DN1100: { totalM: 0, completedM: 0 },
     DN1600: { totalM: 0, completedM: 0 },
+    DN1800: { totalM: 0, completedM: 0 },
+    DN2400: { totalM: 0, completedM: 0 },
+    DN2600: { totalM: 0, completedM: 0 },
   };
 
   let addedLayers = 0;
@@ -197,6 +246,8 @@ export function computeSummary(
   let addedPrecastCompleted = 0;
   let addedTunnelM = 0;
   let addedPumpLayers = 0;
+
+  const baseMap = baselineShaftOverride || baseline?.shafts;
 
   for (const s of shafts) {
     const st = getShaftStatus(s);
@@ -215,11 +266,12 @@ export function computeSummary(
     const compM = (s.tunnelLengthM * s.tunnelPct) / 100;
     totalTunnelLengthM += s.tunnelLengthM;
     completedTunnelLengthM += compM;
+    if (!byDia[s.pipeDia]) byDia[s.pipeDia] = { totalM: 0, completedM: 0 };
     byDia[s.pipeDia].totalM += s.tunnelLengthM;
     byDia[s.pipeDia].completedM += compM;
 
-    if (baseline) {
-      const b = baseline.shafts[s.id];
+    if (baseMap) {
+      const b = baseMap[s.id];
       if (b) {
         const curDone = s.layerFlags.slice(0, s.totalLayers).filter(Boolean).length;
         const prevDone = (b.layerFlags || []).slice(0, s.totalLayers).filter(Boolean).length;
@@ -292,23 +344,34 @@ export function normalizePumpStation(
   fallback: PumpStationData
 ): PumpStationData {
   if (!raw) return JSON.parse(JSON.stringify(fallback));
-  const layers = Array.isArray(raw.layers) && raw.layers.length > 0
-    ? raw.layers.map((ly, i) => ({
-        name: ly.name || `${i + 1} Layer`,
-        sDate: ly.sDate || '',
-        eDate: ly.eDate || '',
-        status:
-          ly.status ||
-          (ly.done ? 'complete' : ly.sDate ? 'ongoing' : 'remaining'),
-      }))
-    : JSON.parse(JSON.stringify(fallback.layers));
+  const layers =
+    Array.isArray(raw.layers) && raw.layers.length > 0
+      ? raw.layers.map((ly, i) => ({
+          name: ly.name || `${i + 1} Layer`,
+          sDate: ly.sDate || '',
+          eDate: ly.eDate || '',
+          status:
+            ly.status ||
+            (ly.done ? 'complete' : ly.sDate ? 'ongoing' : 'remaining'),
+        }))
+      : JSON.parse(JSON.stringify(fallback.layers));
+
+  const totalH = Number(raw.totalHeightM ?? fallback.totalHeightM);
+  const sinkM = Number(raw.sinkingCompletedM ?? fallback.sinkingCompletedM);
+  const inferredSink: WorkStatus =
+    sinkM >= totalH && totalH > 0
+      ? 'complete'
+      : sinkM > 0
+      ? 'ongoing'
+      : 'remaining';
 
   return {
-    totalHeightM: Number(raw.totalHeightM ?? fallback.totalHeightM),
+    totalHeightM: totalH,
     castingCompleteM: Number(
       raw.castingCompleteM ?? raw.completedHeightM ?? fallback.castingCompleteM
     ),
-    sinkingCompletedM: Number(raw.sinkingCompletedM ?? fallback.sinkingCompletedM),
+    sinkingCompletedM: sinkM,
+    sinkingStatus: raw.sinkingStatus || fallback.sinkingStatus || inferredSink,
     layers,
     machineRoom: {
       status: raw.machineRoom?.status || fallback.machineRoom.status,
@@ -318,9 +381,55 @@ export function normalizePumpStation(
   };
 }
 
+export function normalizeWbData(
+  raw: Partial<WbSectionData> | undefined,
+  fallback: WbSectionData
+): WbSectionData {
+  if (!raw || !Array.isArray(raw.nodes) || raw.nodes.length === 0) {
+    return JSON.parse(JSON.stringify(fallback));
+  }
+  return {
+    pipeDia: raw.pipeDia || fallback.pipeDia,
+    method: raw.method || fallback.method,
+    totalLengthM: Number(raw.totalLengthM ?? fallback.totalLengthM),
+    completedLengthM: Number(raw.completedLengthM ?? fallback.completedLengthM),
+    nodes: raw.nodes.map((n, i) => ({
+      id: n.id || `WB${i + 1}`,
+      index: n.index ?? i + 1,
+      lat: Number(n.lat),
+      lon: Number(n.lon),
+      chainageM: Number(n.chainageM ?? 0),
+      status: n.status || 'remaining',
+      sDate: n.sDate || '',
+      eDate: n.eDate || '',
+      note: n.note || '',
+    })),
+    customKmlLines: Array.isArray(raw.customKmlLines) ? raw.customKmlLines : [],
+  };
+}
+
+export function normalizeWcData(
+  raw: Partial<WcSectionData> | undefined,
+  fallback: WcSectionData
+): WcSectionData {
+  if (!raw || !Array.isArray(raw.shafts) || raw.shafts.length === 0) {
+    return JSON.parse(JSON.stringify(fallback));
+  }
+  return {
+    shafts: raw.shafts,
+    geoNodes:
+      Array.isArray(raw.geoNodes) && raw.geoNodes.length > 0
+        ? raw.geoNodes
+        : JSON.parse(JSON.stringify(fallback.geoNodes)),
+    customKmlLines: Array.isArray(raw.customKmlLines) ? raw.customKmlLines : [],
+  };
+}
+
 export interface DisplayContext {
   displayShafts: ShaftRecord[];
   displayPump: PumpStationData;
+  displayWb: WbSectionData;
+  displayWc: WcSectionData;
   baseline: PeriodBaseline;
   file1Label: string;
   file2Label: string;
@@ -332,6 +441,8 @@ export function resolveDisplayContext(state: AppState): DisplayContext {
     return {
       displayShafts: state.shafts,
       displayPump: state.pumpStation,
+      displayWb: state.wb,
+      displayWc: state.wc,
       baseline: state.weeklyBaseline,
       file1Label: '',
       file2Label: 'Live Workspace',
@@ -359,6 +470,8 @@ export function resolveDisplayContext(state: AppState): DisplayContext {
     return {
       displayShafts: file2.shafts,
       displayPump: file2.pumpStation,
+      displayWb: file2.wb,
+      displayWc: file2.wc,
       baseline,
       file1Label,
       file2Label: `${file2.name} (${formatDateDisplay(file2.date)})`,
@@ -369,6 +482,8 @@ export function resolveDisplayContext(state: AppState): DisplayContext {
   return {
     displayShafts: state.shafts,
     displayPump: state.pumpStation,
+    displayWb: state.wb,
+    displayWc: state.wc,
     baseline,
     file1Label,
     file2Label: `Current Workspace (${formatDateDisplay(state.settings.reportDate)})`,
@@ -384,17 +499,26 @@ export function sanitizeLoadedState(
     return fallback;
   }
   const pumpStation = normalizePumpStation(parsed.pumpStation, fallback.pumpStation);
-  const savedFiles: SavedProgressFile[] = Array.isArray(parsed.savedFiles) && parsed.savedFiles.length > 0
-    ? parsed.savedFiles.map((f) => ({
-        ...f,
-        pumpStation: normalizePumpStation(f.pumpStation, fallback.pumpStation),
-      }))
-    : fallback.savedFiles;
+  const wb = normalizeWbData(parsed.wb, fallback.wb);
+  const wc = normalizeWcData(parsed.wc, fallback.wc);
+
+  const savedFiles: SavedProgressFile[] =
+    Array.isArray(parsed.savedFiles) && parsed.savedFiles.length > 0
+      ? parsed.savedFiles.map((f) => ({
+          ...f,
+          pumpStation: normalizePumpStation(f.pumpStation, fallback.pumpStation),
+          wb: normalizeWbData(f.wb, fallback.wb),
+          wc: normalizeWcData(f.wc, fallback.wc),
+        }))
+      : fallback.savedFiles;
 
   return {
     ...fallback,
     ...parsed,
+    activeSection: parsed.activeSection || fallback.activeSection,
     pumpStation,
+    wb,
+    wc,
     savedFiles,
     activeLoadedFileId: parsed.activeLoadedFileId ?? null,
     weeklyCompare: parsed.weeklyCompare || {
