@@ -74,6 +74,18 @@ export function getPartStatus(pct: number): WorkStatus {
   return 'ongoing';
 }
 
+export function getCastingStatus(s: ShaftRecord): WorkStatus {
+  if (s.castingPct >= 100) return 'complete';
+  if (s.castingPct > 0 || Boolean(s.manholeSDate)) return 'ongoing';
+  return 'remaining';
+}
+
+export function getRingStatus(s: ShaftRecord): WorkStatus {
+  if (s.precastPct >= 100) return 'complete';
+  if (s.precastPct > 0) return 'ongoing';
+  return 'remaining';
+}
+
 export function getManholeStatus(s: ShaftRecord): WorkStatus {
   const c = s.castingPct;
   const p = s.precastPct;
@@ -194,7 +206,11 @@ export interface ProgressSummary {
   ongoingManholes: number;
   remainingManholes: number;
   castingCompleteCount: number;
+  castingOngoingCount: number;
+  castingRemainingCount: number;
   precastCompleteCount: number;
+  precastOngoingCount: number;
+  precastRemainingCount: number;
 
   totalTunnelLengthM: number;
   completedTunnelLengthM: number;
@@ -227,7 +243,11 @@ export function computeSummary(
   let ongoingManholes = 0;
   let remainingManholes = 0;
   let castingCompleteCount = 0;
+  let castingOngoingCount = 0;
+  let castingRemainingCount = 0;
   let precastCompleteCount = 0;
+  let precastOngoingCount = 0;
+  let precastRemainingCount = 0;
 
   let totalTunnelLengthM = 0;
   let completedTunnelLengthM = 0;
@@ -256,13 +276,20 @@ export function computeSummary(
     else if (st === 'ongoing') ongoingShafts++;
     else remainingShafts++;
 
+    const castSt = getCastingStatus(s);
+    if (castSt === 'complete') castingCompleteCount++;
+    else if (castSt === 'ongoing') castingOngoingCount++;
+    else castingRemainingCount++;
+
+    const ringSt = getRingStatus(s);
+    if (ringSt === 'complete') precastCompleteCount++;
+    else if (ringSt === 'ongoing') precastOngoingCount++;
+    else precastRemainingCount++;
+
     const mh = getManholeStatus(s);
     if (mh === 'complete') completedManholes++;
-    else if (mh === 'ongoing') ongoingManholes++;
-    else remainingManholes++;
-
-    if (s.castingPct >= 100) castingCompleteCount++;
-    if (s.precastPct >= 100) precastCompleteCount++;
+    if (castSt === 'ongoing') ongoingManholes++;
+    if (mh === 'remaining') remainingManholes++;
 
     const compM = (s.tunnelLengthM * s.tunnelPct) / 100;
     totalTunnelLengthM += s.tunnelLengthM;
@@ -324,7 +351,11 @@ export function computeSummary(
     ongoingManholes,
     remainingManholes,
     castingCompleteCount,
+    castingOngoingCount,
+    castingRemainingCount,
     precastCompleteCount,
+    precastOngoingCount,
+    precastRemainingCount,
     totalTunnelLengthM,
     completedTunnelLengthM,
     tunnelPctOverall:

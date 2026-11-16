@@ -29,9 +29,10 @@ import {
   calcDurationDays,
   calcElapsedDays,
   formatDateDisplay,
+  getCastingStatus,
   getManholeStatus,
-  getPartStatus,
   getPumpLowerStatus,
+  getRingStatus,
   getShaftCompletedLayersCount,
   getShaftStatus,
   getTunnelStatus,
@@ -1062,7 +1063,7 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 </div>
               </div>
               <div className="text-[10px] text-slate-500">
-                Status: <strong className="uppercase">{getPartStatus(shaft.castingPct)}</strong>
+                Status: <strong className="uppercase">{getCastingStatus(shaft)}</strong>
                 {state.viewMode !== 'overall' && bSnap && (
                   <span className="ml-2 text-amber-700">
                     (Prev: {bSnap.castingPct}% → +{Math.max(0, shaft.castingPct - bSnap.castingPct)}%)
@@ -1110,7 +1111,7 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 </div>
               </div>
               <div className="text-[10px] text-slate-500">
-                Status: <strong className="uppercase">{getPartStatus(shaft.precastPct)}</strong>
+                Status: <strong className="uppercase">{getRingStatus(shaft)}</strong>
                 {state.viewMode !== 'overall' && bSnap && (
                   <span className="ml-2 text-amber-700">
                     (Prev: {bSnap.precastPct}% → +{Math.max(0, shaft.precastPct - bSnap.precastPct)}%)

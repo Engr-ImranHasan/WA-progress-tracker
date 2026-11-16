@@ -1869,18 +1869,24 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               )}
 
               <text x={410} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
-                MANHOLE PROGRESS (CASTING + PRECAST)
+                MANHOLE PROGRESS (CASTING & RING)
               </text>
-              <text x={284} y={55} fontSize={7.6} fill="#0f172a">TOTAL MANHOLE</text>
-              <text x={536} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {waSummary.totalManholes} Nos</text>
-              <text x={284} y={71} fontSize={7.6} fill="#15803d" fontWeight="600">COMPLETED MANHOLE</text>
-              <text x={536} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#15803d">: {String(waSummary.completedManholes).padStart(2, '0')} Nos</text>
-              <text x={284} y={87} fontSize={7.6} fill="#b45309" fontWeight="600">ON-GOING MANHOLE</text>
-              <text x={536} y={87} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#b45309">: {String(waSummary.ongoingManholes).padStart(2, '0')} Nos</text>
-              <text x={284} y={103} fontSize={7.6} fill="#1d4ed8">- Lower Casting Complete</text>
-              <text x={536} y={103} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#1d4ed8">: {String(waSummary.castingCompleteCount).padStart(2, '0')} Nos</text>
-              <text x={284} y={119} fontSize={7.6} fill="#0284c7">- Upper Precast Ring Complete</text>
-              <text x={536} y={119} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0284c7">: {String(waSummary.precastCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={55} fontSize={7.5} fontWeight="700" fill="#1d4ed8">Lower Casting Complete (100%)</text>
+              <text x={536} y={55} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#1d4ed8">: {String(waSummary.castingCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={71} fontSize={7.5} fontWeight="600" fill="#b45309">Lower Casting On-going (&lt;100%)</text>
+              <text x={536} y={71} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#b45309">: {String(waSummary.castingOngoingCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={87} fontSize={7.5} fill="#dc2626">Lower Casting Remaining</text>
+              <text x={536} y={87} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#dc2626">: {String(waSummary.castingRemainingCount).padStart(2, '0')} Nos</text>
+
+              <line x1={284} y1={95} x2={536} y2={95} stroke="#cbd5e1" strokeWidth={0.6} />
+
+              <text x={284} y={109} fontSize={7.5} fontWeight="700" fill="#0284c7">Upper Ring Complete (100%)</text>
+              <text x={536} y={109} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#0284c7">: {String(waSummary.precastCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={125} fontSize={7.5} fontWeight="600" fill="#b45309">Upper Ring On-going (&lt;100%)</text>
+              <text x={536} y={125} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#b45309">: {String(waSummary.precastOngoingCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={141} fontSize={7.5} fill="#dc2626">Upper Ring Remaining</text>
+              <text x={536} y={141} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#dc2626">: {String(waSummary.precastRemainingCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={157} fontSize={7.1} fontWeight="600" fill="#475569">Total Manholes: {waSummary.totalManholes} Nos</text>
 
               <text x={740} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
                 MICRO-TUNNELLING PROGRESS
@@ -2121,14 +2127,14 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               <text x={280} y={130} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#dc2626">: {wcSummary.remainingShafts} Nos</text>
 
               <text x={455} y={40} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
-                WC MANHOLE PROGRESS
+                WC MANHOLE (CASTING & RING)
               </text>
-              <text x={320} y={64} fontSize={8.0} fill="#0f172a">TOTAL MANHOLES</text>
-              <text x={592} y={64} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#0f172a">: {wcSummary.totalManholes} Nos</text>
-              <text x={320} y={86} fontSize={8.0} fill="#15803d">COMPLETED</text>
-              <text x={592} y={86} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#15803d">: {wcSummary.completedManholes} Nos</text>
-              <text x={320} y={108} fontSize={8.0} fill="#1d4ed8">CASTING / PRECAST</text>
-              <text x={592} y={108} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#1d4ed8">: {wcSummary.castingCompleteCount} / {wcSummary.precastCompleteCount} Nos</text>
+              <text x={320} y={62} fontSize={7.8} fontWeight="700" fill="#1d4ed8">CASTING (Done/Ong/Rem)</text>
+              <text x={592} y={62} textAnchor="end" fontSize={8.0} fontWeight="700" fill="#1d4ed8">: {wcSummary.castingCompleteCount} / {wcSummary.castingOngoingCount} / {wcSummary.castingRemainingCount}</text>
+              <text x={320} y={84} fontSize={7.8} fontWeight="700" fill="#0284c7">RING (Done/Ong/Rem)</text>
+              <text x={592} y={84} textAnchor="end" fontSize={8.0} fontWeight="700" fill="#0284c7">: {wcSummary.precastCompleteCount} / {wcSummary.precastOngoingCount} / {wcSummary.precastRemainingCount}</text>
+              <text x={320} y={108} fontSize={7.8} fill="#0f172a">TOTAL MANHOLES</text>
+              <text x={592} y={108} textAnchor="end" fontSize={8.0} fontWeight="700" fill="#0f172a">: {wcSummary.totalManholes} Nos</text>
 
               <text x={765} y={40} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
                 WC MICRO-TUNNELLING
@@ -2234,42 +2240,45 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               <text x={111} y={35} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
                 WA SHAFT, MANHOLE & SPS
               </text>
-              <text x={7} y={51} fontSize={7.2} fontWeight="600" fill="#0f172a">WA Shafts ({waSummary.totalShafts})</text>
-              <text x={216} y={51} textAnchor="end" fontSize={7.1} fontWeight="700" fill="#15803d">
+              <text x={7} y={50} fontSize={7.1} fontWeight="600" fill="#0f172a">WA Shafts ({waSummary.totalShafts})</text>
+              <text x={216} y={50} textAnchor="end" fontSize={7.0} fontWeight="700" fill="#15803d">
                 Done:{waSummary.completedShafts} | Ong:{waSummary.ongoingShafts} | Rem:{waSummary.remainingShafts}
               </text>
-              <text x={7} y={66} fontSize={7.2} fontWeight="600" fill="#0f172a">WA Manholes</text>
-              <text x={216} y={66} textAnchor="end" fontSize={7.1} fontWeight="700" fill="#1d4ed8">
-                {waSummary.completedManholes > 0 ? `Done:${waSummary.completedManholes} | ` : ''}
-                Ong:{waSummary.ongoingManholes} | Cast:{waSummary.castingCompleteCount} | Ring:{waSummary.precastCompleteCount}
+              <text x={7} y={64} fontSize={7.1} fontWeight="600" fill="#0f172a">MH Cast ({waSummary.totalManholes})</text>
+              <text x={216} y={64} textAnchor="end" fontSize={7.0} fontWeight="700" fill="#1d4ed8">
+                Cast:{waSummary.castingCompleteCount} | Ong:{waSummary.castingOngoingCount} | Rem:{waSummary.castingRemainingCount}
               </text>
-              <text x={7} y={81} fontSize={7.2} fontWeight="600" fill="#0f172a">WA Tunnel</text>
-              <text x={216} y={81} textAnchor="end" fontSize={7.1} fontWeight="700" fill="#a21caf">
+              <text x={7} y={78} fontSize={7.1} fontWeight="600" fill="#0f172a">MH Ring ({waSummary.totalManholes})</text>
+              <text x={216} y={78} textAnchor="end" fontSize={7.0} fontWeight="700" fill="#0284c7">
+                Ring:{waSummary.precastCompleteCount} | Ong:{waSummary.precastOngoingCount} | Rem:{waSummary.precastRemainingCount}
+              </text>
+              <text x={7} y={94} fontSize={7.1} fontWeight="600" fill="#0f172a">WA Tunnel</text>
+              <text x={216} y={94} textAnchor="end" fontSize={7.0} fontWeight="700" fill="#a21caf">
                 {(waSummary.completedTunnelLengthM / 1000).toFixed(3)} / {(waSummary.totalTunnelLengthM / 1000).toFixed(3)} km ({waSummary.tunnelPctOverall.toFixed(1)}%)
               </text>
-              <text x={8} y={96} fontSize={6.5} fill="#334155">
+              <text x={8} y={108} fontSize={6.4} fill="#334155">
                 DN900: {(waSummary.byDia.DN900.completedM / 1000).toFixed(2)}/{(waSummary.byDia.DN900.totalM / 1000).toFixed(2)}km | DN1100: {(waSummary.byDia.DN1100.completedM / 1000).toFixed(2)}/{(waSummary.byDia.DN1100.totalM / 1000).toFixed(2)}km
               </text>
-              <text x={8} y={109} fontSize={6.5} fill="#334155">
+              <text x={8} y={120} fontSize={6.4} fill="#334155">
                 DN1600: {(waSummary.byDia.DN1600.completedM / 1000).toFixed(2)}/{(waSummary.byDia.DN1600.totalM / 1000).toFixed(2)}km
               </text>
 
-              <rect x={6} y={119} width={210} height={106} rx={2.5} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.65} />
-              <text x={12} y={134} fontSize={7.3} fontWeight="700" fill="#166534">GOLAPBAG PUMP STATION (SPS):</text>
-              <text x={12} y={151} fontSize={6.8} fill="#0f172a">
+              <rect x={6} y={129} width={210} height={96} rx={2.5} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.65} />
+              <text x={12} y={143} fontSize={7.2} fontWeight="700" fill="#166534">GOLAPBAG PUMP STATION (SPS):</text>
+              <text x={12} y={159} fontSize={6.7} fill="#0f172a">
                 - Lower: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Layers (Cast: {pumpStation.castingCompleteM}m)
               </text>
-              <text x={12} y={168} fontSize={6.5} fontWeight="700" fill="#0f766e">
+              <text x={12} y={175} fontSize={6.5} fontWeight="700" fill="#0f766e">
                 - Sinking: {pumpStation.sinkingCompletedM}m / {pumpStation.totalHeightM}m [{pumpStation.sinkingStatus.toUpperCase()}
                 {pumpStation.sinkingStatus !== 'complete'
                   ? ` | Rem: ${Math.max(0, Number((pumpStation.totalHeightM - pumpStation.sinkingCompletedM).toFixed(2)))}m`
                   : ''}]
               </text>
-              <text x={12} y={185} fontSize={6.8} fontWeight="700" fill="#1e3a8a">
+              <text x={12} y={191} fontSize={6.7} fontWeight="700" fill="#1e3a8a">
                 - Upper Room: {pumpStation.machineRoom.status.toUpperCase()}
               </text>
               {viewMode !== 'overall' && (
-                <text x={12} y={207} fontSize={6.7} fontWeight="700" fill="#b45309">
+                <text x={12} y={209} fontSize={6.6} fontWeight="700" fill="#b45309">
                   Delta: +{waSummary.delta.addedLayers}L, +{waSummary.delta.addedTunnelM.toFixed(1)}m WA
                 </text>
               )}
@@ -2294,17 +2303,20 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               </text>
 
               <rect x={228} y={136} width={208} height={89} rx={2.5} fill="#faf5ff" stroke="#9333ea" strokeWidth={0.65} />
-              <text x={235} y={150} fontSize={7.2} fontWeight="700" fill="#6b21a8">WC SECTION (MICRO-TUNNELLING):</text>
-              <text x={235} y={166} fontSize={6.8} fill="#0f172a">
+              <text x={235} y={149} fontSize={7.2} fontWeight="700" fill="#6b21a8">WC SECTION (MICRO-TUNNELLING):</text>
+              <text x={235} y={163} fontSize={6.7} fill="#0f172a">
                 Shafts ({wcSummary.totalShafts}): Done {wcSummary.completedShafts} | Ong {wcSummary.ongoingShafts} | Rem {wcSummary.remainingShafts}
               </text>
-              <text x={235} y={182} fontSize={6.8} fontWeight="700" fill="#a21caf">
+              <text x={235} y={177} fontSize={6.7} fontWeight="700" fill="#a21caf">
                 Tunnel: {(wcSummary.completedTunnelLengthM / 1000).toFixed(3)} / {(wcSummary.totalTunnelLengthM / 1000).toFixed(3)} km ({wcSummary.tunnelPctOverall.toFixed(1)}%)
               </text>
-              <text x={235} y={197} fontSize={6.5} fill="#334155">
-                Manholes: {wcSummary.completedManholes > 0 ? `Done ${wcSummary.completedManholes} | ` : ''}Ong {wcSummary.ongoingManholes} | Cast {wcSummary.castingCompleteCount} | Ring {wcSummary.precastCompleteCount}
+              <text x={235} y={191} fontSize={6.4} fill="#1d4ed8">
+                MH Cast: {wcSummary.castingCompleteCount} | Ong {wcSummary.castingOngoingCount} | Rem {wcSummary.castingRemainingCount}
               </text>
-              <text x={235} y={213} fontSize={6.6} fill="#475569">
+              <text x={235} y={204} fontSize={6.4} fill="#0284c7">
+                MH Ring: {wcSummary.precastCompleteCount} | Ong {wcSummary.precastOngoingCount} | Rem {wcSummary.precastRemainingCount}
+              </text>
+              <text x={235} y={217} fontSize={6.4} fill="#475569">
                 Status: {wcSummary.completedTunnelLengthM > 0 || wcSummary.completedShafts > 0 ? 'Active Construction' : 'Not Started (Blank)'}
               </text>
 
