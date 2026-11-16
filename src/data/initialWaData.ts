@@ -30,6 +30,8 @@ export const DEFAULT_COLORS: ColorPalette = {
 export const DEFAULT_SETTINGS: SheetSettings = {
   projectTitle: 'RECONSTRUCTION OF EASTERN TRUNK MAIN (PACKAGE No. WD2)',
   sectionTitle: 'PROGRESS REPORT (SHAFT, MANHOLE, MICRO-TUNNELLING, OPEN CUT & PUMP STATION)',
+  customTitleBlockSection: '',
+  sheetFormatLabel: 'ISO A1 (841 x 594 mm)',
   drawingNo: 'WABC-PRG-A1-001',
   revision: 'Rev-02',
   reportDate: '2026-11-15',
@@ -41,6 +43,9 @@ export const DEFAULT_SETTINGS: SheetSettings = {
   showPumpStation: true,
   showMapBackground: true,
   mapStyle: 'voyager',
+  waTunnelDiaTotalsM: {
+    DN1600: 2630,
+  },
 };
 
 export const INITIAL_PUMP_STATION: PumpStationData = {

@@ -180,6 +180,8 @@ export interface ColorPalette {
 export interface SheetSettings {
   projectTitle: string;
   sectionTitle: string;
+  customTitleBlockSection?: string;
+  sheetFormatLabel?: string;
   drawingNo: string;
   revision: string;
   reportDate: string; // YYYY-MM-DD
@@ -191,6 +193,7 @@ export interface SheetSettings {
   showPumpStation: boolean;
   showMapBackground: boolean;
   mapStyle: 'voyager' | 'light' | 'cad';
+  waTunnelDiaTotalsM?: Partial<Record<PipeDia, number>>;
 }
 
 export interface AppState {

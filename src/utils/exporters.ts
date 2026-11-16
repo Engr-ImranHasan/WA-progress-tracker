@@ -52,16 +52,27 @@ function sanitizeSvgCloneForExport(svgEl: SVGSVGElement, w: string, h: string): 
 
 export async function preloadSectionMapSnapshots(state: AppState): Promise<void> {
   if (!state.settings.showMapBackground || state.settings.mapStyle === 'cad') return;
-  const wbFullVp = buildGeoViewport(state.wb.nodes, 26, 74, 922, 894, 0.1);
-  const wbCompactVp = buildGeoViewport(state.wb.nodes, 1090, 722, 570, 234, 0.14);
+  // Standalone WB page: x=22, y=58, w=950, h=926 (padTop=26) -> mapX=26, mapY=84, mapW=942, mapH=896
+  const wbFullVp = buildGeoViewport(state.wb.nodes, 26, 84, 942, 896, 0.1);
+  // Combined side-by-side WB map: x=922, y=704, w=368, h=464 -> mapX=926, mapY=723, mapW=360, mapH=441
+  const wbCompactVp = buildGeoViewport(state.wb.nodes, 926, 723, 360, 441, 0.12);
+  // Standalone WC page: x=22, y=720, w=1638, h=268 (padTop=24) -> mapX=26, mapY=744, mapW=1630, mapH=240
   const wcFullVp = buildGeoViewport(state.wc.geoNodes, 26, 744, 1630, 240, 0.12);
-  const wcCompactVp = buildGeoViewport(state.wc.geoNodes, 1090, 982, 570, 182, 0.14);
+  // Combined side-by-side WC map: x=1296, y=704, w=368, h=464 -> mapX=1300, mapY=723, mapW=360, mapH=441
+  const wcCompactVp = buildGeoViewport(state.wc.geoNodes, 1300, 723, 360, 441, 0.12);
+
+  const wbFullW = Math.min(1100, Math.max(480, Math.round(942 * 1.35)));
+  const wbFullH = Math.min(1100, Math.max(420, Math.round(896 * 1.35)));
+  const compactW = Math.min(1100, Math.max(480, Math.round(360 * 1.55)));
+  const compactH = Math.min(1100, Math.max(420, Math.round(441 * 1.55)));
+  const wcFullW = Math.min(1100, Math.max(480, Math.round(1630 * 1.35)));
+  const wcFullH = Math.min(1100, Math.max(420, Math.round(240 * 1.35)));
 
   await Promise.all([
-    ensureMapTileSnapshot(wbFullVp, state.settings.mapStyle, 960, 880),
-    ensureMapTileSnapshot(wbCompactVp, state.settings.mapStyle, 560, 480),
-    ensureMapTileSnapshot(wcFullVp, state.settings.mapStyle, 960, 480),
-    ensureMapTileSnapshot(wcCompactVp, state.settings.mapStyle, 760, 300),
+    ensureMapTileSnapshot(wbFullVp, state.settings.mapStyle, wbFullW, wbFullH),
+    ensureMapTileSnapshot(wbCompactVp, state.settings.mapStyle, compactW, compactH),
+    ensureMapTileSnapshot(wcFullVp, state.settings.mapStyle, wcFullW, wcFullH),
+    ensureMapTileSnapshot(wcCompactVp, state.settings.mapStyle, compactW, compactH),
   ]);
 }
 
@@ -254,7 +265,8 @@ function buildWorkbookFromData(
     baselineShafts: Record<string, { layerFlags: boolean[]; tunnelPct: number; castingPct: number; precastPct: number; bottomSlabDone: boolean }>;
     baselineWcShafts?: Record<string, { layerFlags: boolean[]; tunnelPct: number; castingPct: number; precastPct: number; bottomSlabDone: boolean }>;
     prevWbCompletedM?: number;
-  }
+  },
+  waTunnelDiaTotalsM?: Partial<Record<PipeDia, number>>
 ) {
   const waRows = mapShaftRows(
     shafts,
@@ -296,7 +308,10 @@ function buildWorkbookFromData(
           pumpLayersDone: pumpStation.layers.map((l) => l.status === 'complete'),
           pumpMachineRoomStatus: pumpStation.machineRoom.status,
         }
-      : undefined
+      : undefined,
+    pumpStation,
+    undefined,
+    waTunnelDiaTotalsM
   );
   const wcSummary = computeSummary(wcData.shafts);
   const wbPct = wbData.totalLengthM > 0 ? (wbData.completedLengthM / wbData.totalLengthM) * 100 : 0;
@@ -372,7 +387,7 @@ function buildWorkbookFromData(
 
 export function exportSavedFileExcel(
   file: SavedProgressFile,
-  _settings: SheetSettings,
+  settings: SheetSettings,
   filename: string
 ): void {
   const wb = buildWorkbookFromData(
@@ -380,7 +395,9 @@ export function exportSavedFileExcel(
     file.pumpStation,
     file.wb || createInitialWbData(),
     file.wc || createInitialWcData(),
-    file.date
+    file.date,
+    undefined,
+    settings.waTunnelDiaTotalsM
   );
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   triggerDownload(
@@ -408,7 +425,8 @@ export function exportExcelWorkbook(state: AppState, filename: string): void {
           baselineShafts: ctx.baseline.shafts,
           baselineWcShafts: ctx.baseline.wcShafts,
           prevWbCompletedM: ctx.baseline.wbCompletedLengthM,
-        }
+        },
+    state.settings.waTunnelDiaTotalsM
   );
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   triggerDownload(

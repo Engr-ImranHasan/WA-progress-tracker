@@ -86,6 +86,10 @@ export function App() {
   const [zoom, setZoom] = useState<number>(1);
   const [showInspector, setShowInspector] = useState<boolean>(true);
   const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
+  const [requestedEditorTab, setRequestedEditorTab] = useState<{
+    tab: 'single' | 'table' | 'settings';
+    seq: number;
+  }>({ tab: 'single', seq: 0 });
 
   // Save Overall File Modal
   const [saveModalOpen, setSaveModalOpen] = useState<boolean>(false);
@@ -199,7 +203,13 @@ export function App() {
   };
 
   const displayCtx = resolveDisplayContext(state);
-  const waSummary = computeSummary(displayCtx.displayShafts, displayCtx.baseline);
+  const waSummary = computeSummary(
+    displayCtx.displayShafts,
+    displayCtx.baseline,
+    displayCtx.displayPump,
+    undefined,
+    state.settings.waTunnelDiaTotalsM
+  );
   const wcSummary = computeSummary(displayCtx.displayWc.shafts);
   const wbPct =
     displayCtx.displayWb.totalLengthM > 0
@@ -1034,13 +1044,17 @@ export function App() {
                 setCombinedEditorTarget('wb');
                 if (!showInspector) setShowInspector(true);
               }}
+              onSelectTitleBlock={() => {
+                setRequestedEditorTab((prev) => ({ tab: 'settings', seq: prev.seq + 1 }));
+                if (!showInspector) setShowInspector(true);
+              }}
               svgRef={svgRef}
             />
           </div>
           <div className="no-print mt-2 text-center text-[11px] text-slate-600">
             {isBn
-              ? 'টিপস: যেকোনো WA Shaft, Pump Station, WB নোড বা WC Shaft-এ ক্লিক করে ডান পাশ থেকে এডিট করুন। সব পরিবর্তন অটো-সেভ হয়।'
-              : 'Tip: Click any WA Shaft, Pump Station, WB Node, or WC Shaft on the A1 drawing to edit. All edits auto-save.'}
+              ? 'টিপস: যেকোনো WA Shaft, Pump Station, WB নোড, WC Shaft অথবা Title Block-এ ক্লিক করে ডান পাশ থেকে এডিট করুন। সব পরিবর্তন অটো-সেভ হয়।'
+              : 'Tip: Click any WA Shaft, Pump Station, WB Node, WC Shaft, or Title Block on the A1 drawing to edit. All edits auto-save.'}
           </div>
         </main>
 
@@ -1079,6 +1093,7 @@ export function App() {
                   selectedNodeId={selectedWbNodeId}
                   onSelectNode={(id) => setSelectedWbNodeId(id)}
                   onUpdateWb={handleUpdateWb}
+                  requestedTab={requestedEditorTab}
                   onUpdateSettings={(patch) =>
                     setState((prev) => ({
                       ...prev,
@@ -1109,6 +1124,7 @@ export function App() {
                     }))
                   }
                   focusSection={focusSection}
+                  requestedTab={requestedEditorTab}
                 />
               )}
             </div>

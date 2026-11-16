@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -14,6 +14,7 @@ import {
   CircleDashed,
   Search,
   Building2,
+  FileText,
 } from 'lucide-react';
 import {
   AppState,
@@ -48,6 +49,7 @@ interface ShaftEditorPanelProps {
   onUpdateShaft: (id: string, patch: Partial<ShaftRecord>) => void;
   onUpdateState: (updater: (prev: AppState) => AppState) => void;
   focusSection?: 'shaft' | 'manhole' | 'tunnel';
+  requestedTab?: { tab: 'single' | 'table' | 'settings'; seq: number };
 }
 
 const LABELS = {
@@ -132,11 +134,27 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
   onSelectShaft,
   onUpdateShaft,
   onUpdateState,
+  requestedTab,
 }) => {
   const [activeTab, setActiveTab] = useState<'single' | 'table' | 'settings'>('single');
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | WorkStatus>('all');
   const [showBaselineOverride, setShowBaselineOverride] = useState(false);
+
+  // Smooth uncontrolled-while-typing drafts for tunnel Completed (%) and Completed (m)
+  const [pctDraft, setPctDraft] = useState<string | null>(null);
+  const [lenMDraft, setLenMDraft] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPctDraft(null);
+    setLenMDraft(null);
+  }, [selectedShaftId, sectionTarget]);
+
+  useEffect(() => {
+    if (requestedTab && requestedTab.seq > 0) {
+      setActiveTab(requestedTab.tab);
+    }
+  }, [requestedTab]);
 
   const lang: UiLang = state.uiLang;
   const L = LABELS[lang];
@@ -1161,7 +1179,7 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               </div>
             </div>
 
-            {/* Completed % & Completed Meters synced */}
+            {/* Completed % & Completed Meters smoothly synced */}
             <div className="rounded-md border border-fuchsia-100 bg-fuchsia-50/40 p-2 space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -1170,14 +1188,31 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                   </label>
                   <input
                     type="number"
+                    step="any"
                     min={0}
                     max={100}
-                    value={shaft.tunnelPct}
-                    onChange={(e) =>
-                      onUpdateShaft(shaft.id, {
-                        tunnelPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
-                      })
+                    aria-label="Tunnel Completed (%)"
+                    value={
+                      pctDraft !== null
+                        ? pctDraft
+                        : String(Number(shaft.tunnelPct.toFixed(2)))
                     }
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setPctDraft(raw);
+                      setLenMDraft(null);
+                      if (raw.trim() === '') {
+                        onUpdateShaft(shaft.id, { tunnelPct: 0 });
+                        return;
+                      }
+                      const num = Number(raw);
+                      if (!Number.isNaN(num)) {
+                        onUpdateShaft(shaft.id, {
+                          tunnelPct: Number(Math.max(0, Math.min(100, num)).toFixed(4)),
+                        });
+                      }
+                    }}
+                    onBlur={() => setPctDraft(null)}
                     className="mt-0.5 w-full rounded border border-fuchsia-300 bg-white px-2 py-1 text-xs font-bold text-fuchsia-900"
                   />
                 </div>
@@ -1187,23 +1222,34 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                   </label>
                   <input
                     type="number"
-                    step="0.1"
+                    step="any"
                     min={0}
                     max={shaft.tunnelLengthM}
-                    value={Number(
-                      ((shaft.tunnelLengthM * shaft.tunnelPct) / 100).toFixed(1)
-                    )}
+                    aria-label="Tunnel Completed (m)"
+                    value={
+                      lenMDraft !== null
+                        ? lenMDraft
+                        : String(Number(((shaft.tunnelLengthM * shaft.tunnelPct) / 100).toFixed(2)))
+                    }
                     onChange={(e) => {
-                      const m = Math.max(
-                        0,
-                        Math.min(shaft.tunnelLengthM, Number(e.target.value) || 0)
-                      );
-                      const pct =
-                        shaft.tunnelLengthM > 0
-                          ? Math.round((m / shaft.tunnelLengthM) * 100)
-                          : 0;
-                      onUpdateShaft(shaft.id, { tunnelPct: pct });
+                      const raw = e.target.value;
+                      setLenMDraft(raw);
+                      setPctDraft(null);
+                      if (raw.trim() === '') {
+                        onUpdateShaft(shaft.id, { tunnelPct: 0 });
+                        return;
+                      }
+                      const parsed = Number(raw);
+                      if (!Number.isNaN(parsed)) {
+                        const m = Math.max(0, Math.min(shaft.tunnelLengthM, parsed));
+                        const pct =
+                          shaft.tunnelLengthM > 0
+                            ? Number(((m / shaft.tunnelLengthM) * 100).toFixed(4))
+                            : 0;
+                        onUpdateShaft(shaft.id, { tunnelPct: pct });
+                      }
                     }}
+                    onBlur={() => setLenMDraft(null)}
                     className="mt-0.5 w-full rounded border border-fuchsia-300 bg-white px-2 py-1 text-xs font-bold text-fuchsia-900"
                   />
                 </div>
@@ -1215,18 +1261,24 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 max={100}
                 step={5}
                 value={shaft.tunnelPct}
-                onChange={(e) =>
-                  onUpdateShaft(shaft.id, { tunnelPct: Number(e.target.value) })
-                }
+                onChange={(e) => {
+                  setPctDraft(null);
+                  setLenMDraft(null);
+                  onUpdateShaft(shaft.id, { tunnelPct: Number(e.target.value) });
+                }}
                 className="w-full accent-fuchsia-600"
               />
               <div className="flex flex-wrap gap-1">
                 {[0, 20, 40, 50, 60, 80, 100].map((v) => (
                   <button
                     key={v}
-                    onClick={() => onUpdateShaft(shaft.id, { tunnelPct: v })}
+                    onClick={() => {
+                      setPctDraft(null);
+                      setLenMDraft(null);
+                      onUpdateShaft(shaft.id, { tunnelPct: v });
+                    }}
                     className={`rounded px-1.5 py-0.5 text-[10px] font-bold border ${
-                      shaft.tunnelPct === v
+                      Math.round(shaft.tunnelPct) === v
                         ? 'bg-fuchsia-600 text-white border-fuchsia-700'
                         : 'bg-white text-slate-600 border-slate-300'
                     }`}
@@ -1238,7 +1290,7 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               {state.viewMode !== 'overall' && bSnap && (
                 <div className="text-[11px] font-medium text-amber-800">
                   Prev Baseline: {bSnap.tunnelPct}% → Added:{' '}
-                  <strong>+{Math.max(0, shaft.tunnelPct - bSnap.tunnelPct)}%</strong> (
+                  <strong>+{Math.max(0, shaft.tunnelPct - bSnap.tunnelPct).toFixed(1)}%</strong> (
                   +
                   {(
                     (shaft.tunnelLengthM *
@@ -1249,6 +1301,60 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 </div>
               )}
             </div>
+
+            {/* WA Diameter-wise Micro-Tunnelling Total Length Override (DN900 / DN1100 / DN1600) */}
+            {!isWc && (
+              <details className="rounded-md border border-blue-200 bg-blue-50/40 p-2 text-[11px]">
+                <summary className="cursor-pointer font-bold text-blue-900">
+                  {lang === 'bn'
+                    ? 'WA মোট দৈর্ঘ্য এডিট (DN900 / DN1100 / DN1600)'
+                    : 'WA Dia Total Lengths (DN900 / DN1100 / DN1600)'}
+                </summary>
+                <div className="mt-2 space-y-1.5">
+                  {(['DN900', 'DN1100', 'DN1600'] as const).map((dia) => {
+                    const sumM = state.shafts
+                      .filter((x) => x.pipeDia === dia)
+                      .reduce((a, x) => a + x.tunnelLengthM, 0);
+                    const overrideVal = state.settings.waTunnelDiaTotalsM?.[dia];
+                    const effectiveM = overrideVal !== undefined && overrideVal > 0 ? overrideVal : sumM;
+                    return (
+                      <div key={dia} className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-slate-700 w-14">{dia}:</span>
+                        <input
+                          type="number"
+                          step="1"
+                          min={0}
+                          aria-label={`WA ${dia} Total Length (m)`}
+                          value={Number(effectiveM.toFixed(1))}
+                          onChange={(e) => {
+                            const val = Math.max(0, Number(e.target.value) || 0);
+                            onUpdateState((p) => ({
+                              ...p,
+                              settings: {
+                                ...p.settings,
+                                waTunnelDiaTotalsM: {
+                                  ...(p.settings.waTunnelDiaTotalsM || {}),
+                                  [dia]: val,
+                                },
+                              },
+                            }));
+                          }}
+                          className="w-24 rounded border border-blue-300 bg-white px-2 py-0.5 text-right font-bold text-slate-900"
+                        />
+                        <span className="text-[10px] font-semibold text-blue-800 w-16 text-right">
+                          {(effectiveM / 1000).toFixed(3)} km
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <div className="text-[10px] text-slate-500 pt-0.5">
+                    {lang === 'bn'
+                      ? 'টিপস: সরাসরি মিটার (যেমন DN1600 = 2630) বসালে A1 রিপোর্ট ও Excel-এ সাথে সাথে আপডেট হবে।'
+                      : 'Updates A1 summary & Excel immediately (e.g. DN1600 = 2630 m = 2.63 km).'}
+                  </div>
+                </div>
+              </details>
+            )}
 
             {/* Tunnel Dates */}
             <div className="grid grid-cols-2 gap-2">
@@ -1442,10 +1548,11 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               <thead className="sticky top-0 bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                 <tr>
                   <th className="px-2 py-1.5">Shaft</th>
-                  <th className="px-1.5 py-1.5">Layers</th>
-                  <th className="px-1.5 py-1.5">Cast%</th>
-                  <th className="px-1.5 py-1.5">Ring%</th>
-                  <th className="px-1.5 py-1.5">Tun%</th>
+                  <th className="px-1 py-1.5">Layers</th>
+                  <th className="px-1 py-1.5">Cast%</th>
+                  <th className="px-1 py-1.5">Ring%</th>
+                  <th className="px-1 py-1.5">Len(m)</th>
+                  <th className="px-1 py-1.5">Tun%</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1463,10 +1570,10 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                       <td className="px-2 py-1.5 font-bold text-slate-900">
                         <div>{s.id}</div>
                         <div className="text-[9px] font-normal text-slate-500">
-                          {s.pipeDia} · {s.tunnelLengthM}m
+                          {s.pipeDia}
                         </div>
                       </td>
-                      <td className="px-1.5 py-1.5">
+                      <td className="px-1 py-1.5">
                         <input
                           type="number"
                           min={0}
@@ -1479,11 +1586,11 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                               layerFlags: Array.from({ length: s.totalLayers }, (_, i) => i < c),
                             });
                           }}
-                          className="w-11 rounded border border-slate-300 px-1 py-0.5 text-center font-semibold"
+                          className="w-9 rounded border border-slate-300 px-0.5 py-0.5 text-center font-semibold"
                         />
-                        <span className="ml-0.5 text-[10px] text-slate-400">/{s.totalLayers}</span>
+                        <span className="ml-0.5 text-[9px] text-slate-400">/{s.totalLayers}</span>
                       </td>
-                      <td className="px-1.5 py-1.5">
+                      <td className="px-1 py-1.5">
                         <input
                           type="number"
                           min={0}
@@ -1496,10 +1603,10 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                               castingPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
                             })
                           }
-                          className="w-11 rounded border border-slate-300 px-1 py-0.5 text-center font-semibold"
+                          className="w-10 rounded border border-slate-300 px-0.5 py-0.5 text-center font-semibold"
                         />
                       </td>
-                      <td className="px-1.5 py-1.5">
+                      <td className="px-1 py-1.5">
                         <input
                           type="number"
                           min={0}
@@ -1512,23 +1619,38 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                               precastPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
                             })
                           }
-                          className="w-11 rounded border border-slate-300 px-1 py-0.5 text-center font-semibold"
+                          className="w-10 rounded border border-slate-300 px-0.5 py-0.5 text-center font-semibold"
                         />
                       </td>
-                      <td className="px-1.5 py-1.5">
+                      <td className="px-1 py-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.1"
+                          value={s.tunnelLengthM}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            onUpdateShaft(s.id, {
+                              tunnelLengthM: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                          className="w-12 rounded border border-blue-200 bg-blue-50/40 px-0.5 py-0.5 text-center font-semibold"
+                        />
+                      </td>
+                      <td className="px-1 py-1.5">
                         <input
                           type="number"
                           min={0}
                           max={100}
-                          step={5}
-                          value={s.tunnelPct}
+                          step="any"
+                          value={Number(s.tunnelPct.toFixed(1))}
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) =>
                             onUpdateShaft(s.id, {
                               tunnelPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
                             })
                           }
-                          className="w-11 rounded border border-slate-300 px-1 py-0.5 text-center font-semibold"
+                          className="w-10 rounded border border-slate-300 px-0.5 py-0.5 text-center font-semibold"
                         />
                       </td>
                     </tr>
@@ -1540,17 +1662,103 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
         </div>
       )}
 
-      {/* ==================== TAB 3: SETTINGS, COLORS & HISTORY ==================== */}
+      {/* ==================== TAB 3: SETTINGS, TITLE BLOCK & HISTORY ==================== */}
       {activeTab === 'settings' && (
         <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
-          {/* A1 Sheet & Title Block */}
-          <div className="rounded-lg border border-slate-200 p-3 space-y-2">
-            <h3 className="font-bold text-slate-800 uppercase">A1 Sheet Setup & Title Block</h3>
+          {/* PROJECT DRAWING TITLE BLOCK EDITOR (ALL FIELDS EDITABLE) */}
+          <div className="rounded-lg border border-blue-200 bg-blue-50/30 p-3 space-y-2">
+            <h3 className="flex items-center gap-1.5 font-bold text-blue-950 uppercase">
+              <FileText className="h-3.5 w-3.5 text-blue-700" />
+              Project Drawing Title Block (All Editable)
+            </h3>
+
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-600">Project Title (Top Header Subtitle)</label>
+              <input
+                type="text"
+                aria-label="Title Block Project Title"
+                value={state.settings.projectTitle}
+                onChange={(e) =>
+                  onUpdateState((p) => ({
+                    ...p,
+                    settings: { ...p.settings, projectTitle: e.target.value },
+                  }))
+                }
+                className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-600">Drawing Header Main Title</label>
+              <input
+                type="text"
+                aria-label="Drawing Header Main Title"
+                value={state.settings.sectionTitle}
+                onChange={(e) =>
+                  onUpdateState((p) => ({
+                    ...p,
+                    settings: { ...p.settings, sectionTitle: e.target.value },
+                  }))
+                }
+                className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[10px] text-slate-500">Report Date</label>
+                <label className="block text-[10px] font-semibold text-slate-600">Client</label>
+                <input
+                  type="text"
+                  aria-label="Title Block Client"
+                  value={state.settings.clientName}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, clientName: e.target.value },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Contractor</label>
+                <input
+                  type="text"
+                  aria-label="Title Block Contractor"
+                  value={state.settings.contractorName}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, contractorName: e.target.value },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Title Block Section</label>
+                <input
+                  type="text"
+                  aria-label="Title Block Section"
+                  placeholder={state.activeSection.toUpperCase()}
+                  value={state.settings.customTitleBlockSection || ''}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, customTitleBlockSection: e.target.value },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Date</label>
                 <input
                   type="date"
+                  aria-label="Title Block Date"
                   value={state.settings.reportDate}
                   onChange={(e) =>
                     onUpdateState((p) => ({
@@ -1558,28 +1766,172 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                       settings: { ...p.settings, reportDate: e.target.value },
                     }))
                   }
-                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
                 />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[10px] text-slate-500">A1 Grid Layout</label>
-                <select
-                  value={state.settings.layoutMode}
+                <label className="block text-[10px] font-semibold text-slate-600">Prepared By</label>
+                <input
+                  type="text"
+                  aria-label="Title Block Prepared"
+                  value={state.settings.preparedBy}
                   onChange={(e) =>
                     onUpdateState((p) => ({
                       ...p,
-                      settings: {
-                        ...p.settings,
-                        layoutMode: e.target.value as '10col' | '12col',
-                      },
+                      settings: { ...p.settings, preparedBy: e.target.value },
                     }))
                   }
-                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
-                >
-                  <option value="10col">A1 Balanced (10 Cols)</option>
-                  <option value="12col">Original PDF (12 Cols)</option>
-                </select>
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
               </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Checked By</label>
+                <input
+                  type="text"
+                  aria-label="Title Block Checked"
+                  value={state.settings.checkedBy}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, checkedBy: e.target.value },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <label className="block text-[10px] font-semibold text-slate-600">Drawing No</label>
+                <input
+                  type="text"
+                  aria-label="Title Block Drawing No"
+                  value={state.settings.drawingNo}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, drawingNo: e.target.value },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Rev</label>
+                <input
+                  type="text"
+                  aria-label="Title Block Revision"
+                  value={state.settings.revision}
+                  onChange={(e) =>
+                    onUpdateState((p) => ({
+                      ...p,
+                      settings: { ...p.settings, revision: e.target.value },
+                    }))
+                  }
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-600">Sheet Format Text</label>
+              <input
+                type="text"
+                aria-label="Title Block Sheet"
+                value={state.settings.sheetFormatLabel || 'ISO A1 (841 x 594 mm)'}
+                onChange={(e) =>
+                  onUpdateState((p) => ({
+                    ...p,
+                    settings: { ...p.settings, sheetFormatLabel: e.target.value },
+                  }))
+                }
+                className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+              />
+            </div>
+          </div>
+
+          {/* WA Micro-Tunnelling Diameter Total Lengths */}
+          <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50/30 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-fuchsia-950 uppercase">
+                WA Micro-Tunnelling Total Lengths
+              </h3>
+              <button
+                onClick={() =>
+                  onUpdateState((p) => ({
+                    ...p,
+                    settings: { ...p.settings, waTunnelDiaTotalsM: {} },
+                  }))
+                }
+                className="text-[10px] font-bold text-fuchsia-700 hover:underline"
+              >
+                Use Raw Shaft Sum
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {(['DN900', 'DN1100', 'DN1600'] as const).map((dia) => {
+                const rawSum = state.shafts
+                  .filter((x) => x.pipeDia === dia)
+                  .reduce((a, x) => a + x.tunnelLengthM, 0);
+                const over = state.settings.waTunnelDiaTotalsM?.[dia];
+                const effective = over !== undefined && over > 0 ? over : rawSum;
+                return (
+                  <div key={dia} className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-800 w-16">{dia}</span>
+                    <input
+                      type="number"
+                      step="1"
+                      min={0}
+                      value={Number(effective.toFixed(1))}
+                      onChange={(e) => {
+                        const v = Math.max(0, Number(e.target.value) || 0);
+                        onUpdateState((p) => ({
+                          ...p,
+                          settings: {
+                            ...p.settings,
+                            waTunnelDiaTotalsM: {
+                              ...(p.settings.waTunnelDiaTotalsM || {}),
+                              [dia]: v,
+                            },
+                          },
+                        }));
+                      }}
+                      className="w-24 rounded border border-fuchsia-300 bg-white px-2 py-1 text-right font-bold"
+                    />
+                    <span className="text-[11px] font-semibold text-fuchsia-900 w-20 text-right">
+                      = {(effective / 1000).toFixed(3)} km
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* A1 Layout & Map Options */}
+          <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+            <h3 className="font-bold text-slate-800 uppercase">A1 Layout & Map Settings</h3>
+            <div>
+              <label className="block text-[10px] text-slate-500">A1 Grid Layout</label>
+              <select
+                value={state.settings.layoutMode}
+                onChange={(e) =>
+                  onUpdateState((p) => ({
+                    ...p,
+                    settings: {
+                      ...p.settings,
+                      layoutMode: e.target.value as '10col' | '12col',
+                    },
+                  }))
+                }
+                className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
+              >
+                <option value="10col">A1 Balanced (10 Cols)</option>
+                <option value="12col">Original PDF (12 Cols)</option>
+              </select>
             </div>
 
             <label className="flex items-center gap-2 pt-1 font-medium text-slate-700 cursor-pointer">
@@ -1629,52 +1981,6 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 <option value="light">Map: Clean Light</option>
                 <option value="cad">Map: Vector CAD Grid</option>
               </select>
-            </div>
-
-            <div>
-              <label className="block text-[10px] text-slate-500">Section Title</label>
-              <input
-                type="text"
-                value={state.settings.sectionTitle}
-                onChange={(e) =>
-                  onUpdateState((p) => ({
-                    ...p,
-                    settings: { ...p.settings, sectionTitle: e.target.value },
-                  }))
-                }
-                className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[10px] text-slate-500">Prepared By</label>
-                <input
-                  type="text"
-                  value={state.settings.preparedBy}
-                  onChange={(e) =>
-                    onUpdateState((p) => ({
-                      ...p,
-                      settings: { ...p.settings, preparedBy: e.target.value },
-                    }))
-                  }
-                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-500">Drawing No / Rev</label>
-                <input
-                  type="text"
-                  value={`${state.settings.drawingNo}`}
-                  onChange={(e) =>
-                    onUpdateState((p) => ({
-                      ...p,
-                      settings: { ...p.settings, drawingNo: e.target.value },
-                    }))
-                  }
-                  className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1"
-                />
-              </div>
             </div>
           </div>
 

@@ -1,8 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
   Compass,
+  FileText,
   Map as MapIcon,
   MapPin,
   RotateCcw,
@@ -255,6 +256,7 @@ interface WbEditorPanelProps {
   onUpdateWb: (updater: (wb: WbSectionData) => WbSectionData) => void;
   onUpdateSettings: (patch: Partial<SheetSettings>) => void;
   onSyncTotalLengthFromGps?: () => void;
+  requestedTab?: { tab: 'single' | 'table' | 'settings'; seq: number };
 }
 
 export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
@@ -263,10 +265,17 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
   onSelectNode,
   onUpdateWb,
   onUpdateSettings,
+  requestedTab,
 }) => {
-  const [tab, setTab] = useState<'single' | 'table'>('single');
+  const [tab, setTab] = useState<'single' | 'table' | 'titleblock'>('single');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | WorkStatus>('all');
+
+  useEffect(() => {
+    if (requestedTab && requestedTab.seq > 0) {
+      setTab(requestedTab.tab === 'settings' ? 'titleblock' : requestedTab.tab);
+    }
+  }, [requestedTab]);
 
   const wb = state.wb;
   const lang = state.uiLang;
@@ -321,29 +330,40 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
 
   return (
     <aside className="no-print flex h-full flex-col border-l border-slate-200 bg-white">
-      {/* Top 2 Tabs for WB */}
-      <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50 text-xs font-semibold">
+      {/* Top 3 Tabs for WB */}
+      <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-xs font-semibold">
         <button
           onClick={() => setTab('single')}
-          className={`flex items-center justify-center gap-1.5 py-2.5 border-b-2 transition ${
+          className={`flex items-center justify-center gap-1 py-2.5 border-b-2 transition ${
             tab === 'single'
               ? 'border-emerald-600 bg-white text-emerald-700'
               : 'border-transparent text-slate-600 hover:text-slate-900'
           }`}
         >
           <MapPin className="h-3.5 w-3.5" />
-          {isBn ? 'WB দৈর্ঘ্য ও নোড এডিট' : 'WB Length & Node Edit'}
+          {isBn ? 'WB এডিট' : 'WB Edit'}
         </button>
         <button
           onClick={() => setTab('table')}
-          className={`flex items-center justify-center gap-1.5 py-2.5 border-b-2 transition ${
+          className={`flex items-center justify-center gap-1 py-2.5 border-b-2 transition ${
             tab === 'table'
               ? 'border-emerald-600 bg-white text-emerald-700'
               : 'border-transparent text-slate-600 hover:text-slate-900'
           }`}
         >
           <Table2 className="h-3.5 w-3.5" />
-          {isBn ? `সব ${wb.nodes.length}টি নোড` : `All ${wb.nodes.length} Nodes`}
+          {isBn ? `সব ${wb.nodes.length}` : `Nodes (${wb.nodes.length})`}
+        </button>
+        <button
+          onClick={() => setTab('titleblock')}
+          className={`flex items-center justify-center gap-1 py-2.5 border-b-2 transition ${
+            tab === 'titleblock'
+              ? 'border-blue-600 bg-white text-blue-700'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <FileText className="h-3.5 w-3.5" />
+          Title Block
         </button>
       </div>
 
@@ -715,6 +735,125 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {tab === 'titleblock' && (
+        <div className="flex-1 overflow-y-auto p-3 space-y-2.5 text-xs">
+          <div className="rounded-lg border border-blue-200 bg-blue-50/30 p-3 space-y-2">
+            <h3 className="flex items-center gap-1.5 font-bold text-blue-950 uppercase">
+              <FileText className="h-3.5 w-3.5 text-blue-700" />
+              Project Drawing Title Block
+            </h3>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-600">Project Title</label>
+              <input
+                type="text"
+                value={state.settings.projectTitle}
+                onChange={(e) => onUpdateSettings({ projectTitle: e.target.value })}
+                className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-600">Header Main Title</label>
+              <input
+                type="text"
+                value={state.settings.sectionTitle}
+                onChange={(e) => onUpdateSettings({ sectionTitle: e.target.value })}
+                className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Client</label>
+                <input
+                  type="text"
+                  value={state.settings.clientName}
+                  onChange={(e) => onUpdateSettings({ clientName: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Contractor</label>
+                <input
+                  type="text"
+                  value={state.settings.contractorName}
+                  onChange={(e) => onUpdateSettings({ contractorName: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Title Block Section</label>
+                <input
+                  type="text"
+                  placeholder={state.activeSection.toUpperCase()}
+                  value={state.settings.customTitleBlockSection || ''}
+                  onChange={(e) => onUpdateSettings({ customTitleBlockSection: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Date</label>
+                <input
+                  type="date"
+                  value={state.settings.reportDate}
+                  onChange={(e) => onUpdateSettings({ reportDate: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Prepared By</label>
+                <input
+                  type="text"
+                  value={state.settings.preparedBy}
+                  onChange={(e) => onUpdateSettings({ preparedBy: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Checked By</label>
+                <input
+                  type="text"
+                  value={state.settings.checkedBy}
+                  onChange={(e) => onUpdateSettings({ checkedBy: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <label className="block text-[10px] font-semibold text-slate-600">Drawing No</label>
+                <input
+                  type="text"
+                  value={state.settings.drawingNo}
+                  onChange={(e) => onUpdateSettings({ drawingNo: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-600">Rev</label>
+                <input
+                  type="text"
+                  value={state.settings.revision}
+                  onChange={(e) => onUpdateSettings({ revision: e.target.value })}
+                  className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-600">Sheet Format Text</label>
+              <input
+                type="text"
+                value={state.settings.sheetFormatLabel || 'ISO A1 (841 x 594 mm)'}
+                onChange={(e) => onUpdateSettings({ sheetFormatLabel: e.target.value })}
+                className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"
+              />
+            </div>
           </div>
         </div>
       )}

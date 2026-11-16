@@ -55,24 +55,28 @@ export const WbNavigationMapGroup: React.FC<WbMapProps> = ({
   compact = false,
   clipIdSuffix = 'main',
 }) => {
-  const padTop = compact ? 18 : 26;
+  const padTop = compact ? 19 : 26;
   const mapX = x + 4;
   const mapY = y + padTop;
   const mapW = Math.max(40, w - 8);
   const mapH = Math.max(40, h - padTop - 4);
   const clipId = `wb-map-clip-${clipIdSuffix}`;
+  const isNarrow = w < 440;
 
   const viewport = useMemo(
-    () => buildGeoViewport(wb.nodes, mapX, mapY, mapW, mapH, compact ? 0.14 : 0.1),
+    () => buildGeoViewport(wb.nodes, mapX, mapY, mapW, mapH, compact ? 0.12 : 0.1),
     [wb.nodes, mapX, mapY, mapW, mapH, compact]
   );
+
+  const tilePxW = Math.min(1100, Math.max(480, Math.round(mapW * (compact ? 1.55 : 1.35))));
+  const tilePxH = Math.min(1100, Math.max(420, Math.round(mapH * (compact ? 1.55 : 1.35))));
 
   const tileDataUrl = useMapTileSnapshot(
     viewport,
     settings.showMapBackground,
     settings.mapStyle,
-    compact ? 560 : 960,
-    compact ? 480 : 880
+    tilePxW,
+    tilePxH
   );
 
   const split = useMemo(
@@ -128,19 +132,19 @@ export const WbNavigationMapGroup: React.FC<WbMapProps> = ({
         strokeWidth={0.8}
       />
       <text
-        x={x + 8}
-        y={y + (compact ? 12.5 : 17)}
-        fontSize={compact ? 7.2 : 10}
+        x={x + 7}
+        y={y + (compact ? 13 : 17)}
+        fontSize={isNarrow ? 6.5 : compact ? 7.2 : 10}
         fontWeight="700"
         fill="#1e3a8a"
       >
-        WB SECTION ({wb.method} {wb.pipeDia})
+        {isNarrow ? `WB MAP (${wb.pipeDia} ${wb.method})` : `WB SECTION (${wb.method} ${wb.pipeDia})`}
       </text>
       <text
-        x={x + w - 8}
-        y={y + (compact ? 12.5 : 17)}
+        x={x + w - 7}
+        y={y + (compact ? 13 : 17)}
         textAnchor="end"
-        fontSize={compact ? 6.0 : 8.5}
+        fontSize={isNarrow ? 5.7 : compact ? 6.0 : 8.5}
         fontWeight="700"
         fill="#15803d"
       >
@@ -250,7 +254,7 @@ export const WbNavigationMapGroup: React.FC<WbMapProps> = ({
         {(() => {
           let lastLabelX = -9999;
           let lastLabelY = -9999;
-          const minDist = compact ? 26 : 21;
+          const minDist = compact ? 22 : 21;
 
           return wb.nodes.map((n, idx) => {
             const pt = viewport.project(n.lat, n.lon);
@@ -259,7 +263,7 @@ export const WbNavigationMapGroup: React.FC<WbMapProps> = ({
             const r = isSel ? (compact ? 4.2 : 6.2) : compact ? 2.6 : 4.2;
             const isBoundary = idx === 0 || idx === wb.nodes.length - 1 || isSel;
             const farEnough = Math.hypot(pt.x - lastLabelX, pt.y - lastLabelY) >= minDist;
-            const showLabel = isBoundary || ((!compact || idx % 4 === 0) && farEnough);
+            const showLabel = isBoundary || ((!compact || idx % 3 === 0) && farEnough);
             if (showLabel) {
               lastLabelX = pt.x;
               lastLabelY = pt.y;
@@ -429,24 +433,28 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
   compact = false,
   clipIdSuffix = 'main',
 }) => {
-  const padTop = compact ? 18 : 24;
+  const padTop = compact ? 19 : 24;
   const mapX = x + 4;
   const mapY = y + padTop;
   const mapW = Math.max(40, w - 8);
   const mapH = Math.max(40, h - padTop - 4);
   const clipId = `wc-map-clip-${clipIdSuffix}`;
+  const isNarrow = w < 440;
 
   const viewport = useMemo(
-    () => buildGeoViewport(wc.geoNodes, mapX, mapY, mapW, mapH, compact ? 0.14 : 0.12),
+    () => buildGeoViewport(wc.geoNodes, mapX, mapY, mapW, mapH, compact ? 0.12 : 0.12),
     [wc.geoNodes, mapX, mapY, mapW, mapH, compact]
   );
+
+  const tilePxW = Math.min(1100, Math.max(480, Math.round(mapW * (compact ? 1.55 : 1.35))));
+  const tilePxH = Math.min(1100, Math.max(420, Math.round(mapH * (compact ? 1.55 : 1.35))));
 
   const tileDataUrl = useMapTileSnapshot(
     viewport,
     settings.showMapBackground,
     settings.mapStyle,
-    compact ? 760 : 960,
-    compact ? 300 : 480
+    tilePxW,
+    tilePxH
   );
 
   const shaftById = useMemo(() => {
@@ -488,24 +496,25 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
         strokeWidth={0.8}
       />
       <text
-        x={x + 8}
-        y={y + (compact ? 12.5 : 16)}
-        fontSize={compact ? 7.2 : 9.2}
+        x={x + 7}
+        y={y + (compact ? 13 : 16)}
+        fontSize={isNarrow ? 6.5 : compact ? 7.2 : 9.2}
         fontWeight="700"
         fill="#1e3a8a"
       >
-        WC SECTION (MICRO-TUNNELLING CORRIDOR — WC-1 TO WC-27)
+        {isNarrow ? 'WC MAP (MICRO-TUNNEL WC-1..27)' : 'WC SECTION (MICRO-TUNNELLING CORRIDOR — WC-1 TO WC-27)'}
       </text>
       <text
-        x={x + w - 8}
-        y={y + (compact ? 12.5 : 16)}
+        x={x + w - 7}
+        y={y + (compact ? 13 : 16)}
         textAnchor="end"
-        fontSize={compact ? 6.0 : 8.0}
+        fontSize={isNarrow ? 5.7 : compact ? 6.0 : 8.0}
         fontWeight="700"
         fill={doneLenM > 0 ? '#a21caf' : '#dc2626'}
       >
-        Done: {(doneLenM / 1000).toFixed(3)} / {(totalLenM / 1000).toFixed(2)} km (
-        {doneLenM > 0 ? 'Active' : 'Not Started'})
+        {isNarrow
+          ? `${(doneLenM / 1000).toFixed(2)} / ${(totalLenM / 1000).toFixed(2)} km (${doneLenM > 0 ? 'Active' : 'Blank'})`
+          : `Done: ${(doneLenM / 1000).toFixed(3)} / ${(totalLenM / 1000).toFixed(2)} km (${doneLenM > 0 ? 'Active' : 'Not Started'})`}
       </text>
 
       <rect x={mapX} y={mapY} width={mapW} height={mapH} fill="#f1f5f9" />
@@ -594,7 +603,7 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
             const r = isSel ? (compact ? 4.0 : 5.5) : compact ? 2.5 : 3.5;
             const isEnd = idx === 0 || idx === wc.geoNodes.length - 1 || isSel;
             const farEnough = Math.hypot(pt.x - lastLx, pt.y - lastLy) >= minDist;
-            const showLbl = isEnd || ((!compact || idx % 4 === 0) && farEnough);
+            const showLbl = isEnd || ((!compact || idx % 3 === 0) && farEnough);
             if (showLbl) {
               lastLx = pt.x;
               lastLy = pt.y;

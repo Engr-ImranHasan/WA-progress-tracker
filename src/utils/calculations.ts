@@ -216,7 +216,8 @@ export function computeSummary(
   shafts: ShaftRecord[],
   baseline?: PeriodBaseline,
   pumpStation?: PumpStationData,
-  baselineShaftOverride?: Record<string, ShaftSnapshotItem>
+  baselineShaftOverride?: Record<string, ShaftSnapshotItem>,
+  diaTotalsOverrideM?: Partial<Record<string, number>>
 ): ProgressSummary {
   let completedShafts = 0;
   let ongoingShafts = 0;
@@ -289,6 +290,21 @@ export function computeSummary(
         );
       }
     }
+  }
+
+  // Apply explicit diameter total length overrides (e.g. DN1600 = 2630m = 2.63 km)
+  if (diaTotalsOverrideM) {
+    let deltaTotal = 0;
+    for (const [dia, overrideVal] of Object.entries(diaTotalsOverrideM)) {
+      if (typeof overrideVal === 'number' && Number.isFinite(overrideVal) && overrideVal > 0) {
+        if (!byDia[dia]) byDia[dia] = { totalM: 0, completedM: 0 };
+        if (byDia[dia].totalM > 0 || shafts.some((s) => s.pipeDia === dia)) {
+          deltaTotal += overrideVal - byDia[dia].totalM;
+          byDia[dia].totalM = overrideVal;
+        }
+      }
+    }
+    totalTunnelLengthM = Math.max(0, totalTunnelLengthM + deltaTotal);
   }
 
   if (baseline && pumpStation) {
