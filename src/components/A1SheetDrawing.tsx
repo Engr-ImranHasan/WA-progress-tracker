@@ -1731,6 +1731,10 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
   const wbDoneCount = wbData.nodes.filter((n) => n.status === 'complete').length;
   const wbOngoingCount = wbData.nodes.filter((n) => n.status === 'ongoing').length;
   const wbRemCount = wbData.nodes.filter((n) => n.status === 'remaining').length;
+  const wbCompletePct =
+    wbData.totalLengthM > 0
+      ? Math.min(100, (wbData.completedLengthM / wbData.totalLengthM) * 100)
+      : 0;
   const wbPrevCompletedM =
     viewMode === 'overall' ? undefined : baseline.wbCompletedLengthM;
 
@@ -2298,8 +2302,8 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               <text x={235} y={103} fontSize={6.9} fontWeight="700" fill="#dc2626">
                 Rem: {(Math.max(0, wbData.totalLengthM - wbData.completedLengthM) / 1000).toFixed(3)} km
               </text>
-              <text x={235} y={119} fontSize={6.6} fill="#334155">
-                Nodes ({wbData.nodes.length}): Done {wbDoneCount} | Ong {wbOngoingCount} | Rem {wbRemCount}
+              <text x={235} y={119} fontSize={6.9} fontWeight="700" fill="#2563eb">
+                Progress: {wbCompletePct.toFixed(1)}% Complete
               </text>
 
               <rect x={228} y={136} width={208} height={89} rx={2.5} fill="#faf5ff" stroke="#9333ea" strokeWidth={0.65} />
