@@ -335,10 +335,11 @@ function buildWorkbookFromData(
       : []),
     { Section: 'WA', Category: 'Shafts', Metric: 'Total Shafts', Value: waSummary.totalShafts, Unit: 'Nos' },
     { Section: 'WA', Category: 'Shafts', Metric: 'Completed / On-going / Remaining', Value: `${waSummary.completedShafts} / ${waSummary.ongoingShafts} / ${waSummary.remainingShafts}`, Unit: 'Nos' },
-    { Section: 'WA', Category: 'Manholes', Metric: 'Completed Manholes (Both Parts)', Value: waSummary.completedManholes, Unit: 'Nos' },
+    { Section: 'WA', Category: 'Manholes', Metric: 'Completed / On-going Manholes', Value: `${waSummary.completedManholes} / ${waSummary.ongoingManholes}`, Unit: 'Nos' },
+    { Section: 'WA', Category: 'Manholes', Metric: 'Casting Complete / Precast Ring Complete', Value: `${waSummary.castingCompleteCount} / ${waSummary.precastCompleteCount}`, Unit: 'Nos' },
     { Section: 'WA', Category: 'Micro-Tunnelling', Metric: 'Completed / Total Length', Value: `${(waSummary.completedTunnelLengthM / 1000).toFixed(3)} / ${(waSummary.totalTunnelLengthM / 1000).toFixed(3)}`, Unit: 'km' },
     { Section: 'SPS', Category: 'Pump Station', Metric: 'Lower Main Structure (L1 bottom→L5 top)', Value: `${getPumpLowerStatus(pumpStation).toUpperCase()} (${pumpStation.layers.filter((l) => l.status === 'complete').length}/5 layers)`, Unit: '' },
-    { Section: 'SPS', Category: 'Pump Station', Metric: 'Sinking Status & Completed Length', Value: `${pumpStation.sinkingStatus.toUpperCase()} (${pumpStation.sinkingCompletedM}m / ${pumpStation.totalHeightM}m)`, Unit: 'm' },
+    { Section: 'SPS', Category: 'Pump Station', Metric: 'Sinking Status & Completed / Remaining', Value: `${pumpStation.sinkingStatus.toUpperCase()} (${pumpStation.sinkingCompletedM}m / ${pumpStation.totalHeightM}m, Rem: ${Math.max(0, Number((pumpStation.totalHeightM - pumpStation.sinkingCompletedM).toFixed(2)))}m)`, Unit: 'm' },
     { Section: 'SPS', Category: 'Pump Station', Metric: 'Upper Machine Room', Value: pumpStation.machineRoom.status.toUpperCase(), Unit: '' },
     { Section: 'WB', Category: 'Open Cut', Metric: 'Total / Completed / Remaining', Value: `${wbData.totalLengthM}m / ${wbData.completedLengthM}m / ${Math.max(0, wbData.totalLengthM - wbData.completedLengthM).toFixed(1)}m (${wbPct.toFixed(1)}%)`, Unit: 'm' },
     { Section: 'WB', Category: 'Nodes', Metric: 'Total / Complete / On-going / Remaining', Value: `${wbData.nodes.length} / ${wbData.nodes.filter((n) => n.status === 'complete').length} / ${wbData.nodes.filter((n) => n.status === 'ongoing').length} / ${wbData.nodes.filter((n) => n.status === 'remaining').length}`, Unit: 'Nos' },
@@ -687,7 +688,9 @@ export function exportAutoCadDxf(state: AppState, filename: string): void {
     const bSnap = targetBaseline[s.id];
 
     for (let li = 0; li < s.totalLayers; li++) {
-      const ly = sy + li * layerH;
+      const ly = s.sheetPileStyle
+        ? sy + wallH - (li + 1) * layerH
+        : sy + li * layerH;
       const isDone = Boolean(s.layerFlags[li]);
       const wasPrev = Boolean(bSnap?.layerFlags?.[li]);
       let lyrName = 'SHAFT_REMAINING';
@@ -695,14 +698,18 @@ export function exportAutoCadDxf(state: AppState, filename: string): void {
         if (state.viewMode !== 'overall' && !wasPrev) lyrName = 'SHAFT_CURR_PERIOD';
         else lyrName = 'SHAFT_PREV_COMPLETE';
       }
+      const wThick = s.sheetPileStyle ? 1.8 : 3;
+      const rightX = s.sheetPileStyle ? sx + 21 - wThick : sx + 18;
       if (isDone) {
-        dxfSolidRect(lyrName, sx, ly, 3, layerH - 0.3);
-        dxfSolidRect(lyrName, sx + 18, ly, 3, layerH - 0.3);
+        dxfSolidRect(lyrName, sx, ly, wThick, layerH - 0.3);
+        dxfSolidRect(lyrName, rightX, ly, wThick, layerH - 0.3);
       } else {
-        dxfRect(lyrName, sx, ly, 3, layerH - 0.3);
-        dxfRect(lyrName, sx + 18, ly, 3, layerH - 0.3);
+        dxfRect(lyrName, sx, ly, wThick, layerH - 0.3);
+        dxfRect(lyrName, rightX, ly, wThick, layerH - 0.3);
       }
-      dxfText('TEXT_TABLES', sx + 22.5, ly + layerH * 0.7, 1.4, `W${li + 1}`);
+      if (!s.sheetPileStyle) {
+        dxfText('TEXT_TABLES', sx + 22.5, ly + layerH * 0.7, 1.4, `W${li + 1}`);
+      }
     }
 
     const mhX = sx + 6.5;

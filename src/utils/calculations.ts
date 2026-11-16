@@ -345,14 +345,51 @@ export function computeSummary(
 
 export function resizeShaftLayers(
   oldFlags: boolean[],
-  newTotalLayers: number
+  newTotalLayers: number,
+  minLayers = 4
 ): boolean[] {
-  const clamped = Math.max(6, Math.min(13, Math.round(newTotalLayers)));
+  const clamped = Math.max(minLayers, Math.min(13, Math.round(newTotalLayers)));
   const res: boolean[] = [];
   for (let i = 0; i < clamped; i++) {
     res.push(Boolean(oldFlags[i]));
   }
   return res;
+}
+
+export function normalizeShaftSheetPile(shafts: ShaftRecord[]): ShaftRecord[] {
+  return shafts.map((s) => {
+    if ((s.id === 'WA-33' || s.id === 'WA-34') && s.sheetPileStyle && s.totalLayers === 12) {
+      const done = s.layerFlags.slice(0, 12).filter(Boolean).length;
+      const divDone = Math.max(0, Math.min(4, Math.round((done / 12) * 4)));
+      return {
+        ...s,
+        totalLayers: 4,
+        layerFlags: Array.from({ length: 4 }, (_, i) => i < divDone),
+      };
+    }
+    return s;
+  });
+}
+
+function normalizeBaselineSheetPile(
+  base: PeriodBaseline | undefined,
+  fallback: PeriodBaseline
+): PeriodBaseline {
+  const src = base || fallback;
+  const shaftsMap: Record<string, ShaftSnapshotItem> = {};
+  for (const [id, snap] of Object.entries(src.shafts || {})) {
+    if ((id === 'WA-33' || id === 'WA-34') && snap.layerFlags?.length === 12) {
+      const done = snap.layerFlags.filter(Boolean).length;
+      const divDone = Math.max(0, Math.min(4, Math.round((done / 12) * 4)));
+      shaftsMap[id] = {
+        ...snap,
+        layerFlags: Array.from({ length: 4 }, (_, i) => i < divDone),
+      };
+    } else {
+      shaftsMap[id] = snap;
+    }
+  }
+  return { ...src, shafts: shaftsMap };
 }
 
 export function normalizePumpStation(
@@ -514,6 +551,7 @@ export function sanitizeLoadedState(
   if (!parsed || !Array.isArray(parsed.shafts) || parsed.shafts.length === 0) {
     return fallback;
   }
+  const shafts = normalizeShaftSheetPile(parsed.shafts);
   const pumpStation = normalizePumpStation(parsed.pumpStation, fallback.pumpStation);
   const wb = normalizeWbData(parsed.wb, fallback.wb);
   const wc = normalizeWcData(parsed.wc, fallback.wc);
@@ -522,6 +560,7 @@ export function sanitizeLoadedState(
     Array.isArray(parsed.savedFiles) && parsed.savedFiles.length > 0
       ? parsed.savedFiles.map((f) => ({
           ...f,
+          shafts: normalizeShaftSheetPile(f.shafts),
           pumpStation: normalizePumpStation(f.pumpStation, fallback.pumpStation),
           wb: normalizeWbData(f.wb, fallback.wb),
           wc: normalizeWcData(f.wc, fallback.wc),
@@ -531,6 +570,7 @@ export function sanitizeLoadedState(
   return {
     ...fallback,
     ...parsed,
+    shafts,
     activeSection: parsed.activeSection || fallback.activeSection,
     pumpStation,
     wb,
@@ -547,8 +587,8 @@ export function sanitizeLoadedState(
     },
     colors: { ...fallback.colors, ...(parsed.colors || {}) },
     settings: { ...fallback.settings, ...(parsed.settings || {}) },
-    weeklyBaseline: parsed.weeklyBaseline || fallback.weeklyBaseline,
-    monthlyBaseline: parsed.monthlyBaseline || fallback.monthlyBaseline,
+    weeklyBaseline: normalizeBaselineSheetPile(parsed.weeklyBaseline, fallback.weeklyBaseline),
+    monthlyBaseline: normalizeBaselineSheetPile(parsed.monthlyBaseline, fallback.monthlyBaseline),
     history: Array.isArray(parsed.history) ? parsed.history : fallback.history,
   };
 }

@@ -442,7 +442,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             />
           )}
 
-          {/* Title + L:X/Y right next to Shaft ID (Fix #3) */}
+          {/* Title + L:X/Y (or SP:X/Y for Sheet Pile) right next to Shaft ID */}
           <text
             x={colW * 0.54}
             y={13}
@@ -458,7 +458,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               fontWeight="700"
               fill={statusBadgeColor(shStatus)}
             >
-              L:{shDoneLayers}/{s.totalLayers}
+              {s.sheetPileStyle ? `SP:${shDoneLayers}/${s.totalLayers}` : `L:${shDoneLayers}/${s.totalLayers}`}
             </tspan>
           </text>
 
@@ -554,8 +554,18 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 y: 102,
                 st: mhStatus,
                 sD: formatDateDisplay(s.manholeSDate),
-                eD: s.manholeEDate ? formatDateDisplay(s.manholeEDate) : mhStatus === 'ongoing' ? 'On-going' : '',
-                dur: mhDur !== null ? `${mhDur} Days` : mhStatus === 'ongoing' ? 'On-going' : 'Rem.',
+                eD:
+                  mhStatus === 'complete'
+                    ? formatDateDisplay(s.manholeEDate)
+                    : mhStatus === 'ongoing'
+                    ? 'On-going'
+                    : '',
+                dur:
+                  mhStatus === 'complete' && mhDur !== null
+                    ? `${mhDur} Days`
+                    : mhStatus === 'ongoing'
+                    ? 'On-going'
+                    : 'Rem.',
               },
             ].map((grp, gi) => (
               <g key={grp.name}>
@@ -637,83 +647,212 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             Road Level
           </text>
 
-          {/* Outer Lip */}
-          <rect
-            x={wallLeftX - 2}
-            y={shaftTopY}
-            width={wallThick + 2}
-            height={3}
-            fill={getLayerFill(s, 0, bSnap) ?? '#ffffff'}
-            stroke={getLayerFill(s, 0, bSnap) ? '#14532d' : colors.remainingOutline}
-            strokeWidth={0.5}
-          />
-          <rect
-            x={wallRightX}
-            y={shaftTopY}
-            width={wallThick + 2}
-            height={3}
-            fill={getLayerFill(s, 0, bSnap) ?? '#ffffff'}
-            stroke={getLayerFill(s, 0, bSnap) ? '#14532d' : colors.remainingOutline}
-            strokeWidth={0.5}
-          />
-
-          {/* Dynamic W1..WN Shaft Layers (W1..WN centered INSIDE Left Wall -> flush tunnel bars!) */}
-          {Array.from({ length: s.totalLayers }).map((_, li) => {
-            const ly = shaftTopY + li * layerH;
-            const fill = getLayerFill(s, li, bSnap);
-            const stroke = fill ? '#14532d' : colors.remainingOutline;
-            const labelColor =
-              fill === colors.overallShaft || fill === currHighlight
-                ? '#052e16'
-                : fill
-                ? '#ffffff'
-                : '#dc2626';
-            return (
-              <g key={li}>
-                <rect
-                  x={wallLeftX}
-                  y={ly}
-                  width={wallThick}
-                  height={Math.max(2, layerH - 0.45)}
-                  fill={fill ?? '#ffffff'}
-                  stroke={stroke}
-                  strokeWidth={0.55}
-                />
-                <rect
-                  x={wallRightX}
-                  y={ly}
-                  width={wallThick}
-                  height={Math.max(2, layerH - 0.45)}
-                  fill={fill ?? '#ffffff'}
-                  stroke={stroke}
-                  strokeWidth={0.55}
-                />
-                <text
-                  x={wallLeftX + wallThick / 2}
-                  y={ly + layerH * 0.72}
-                  textAnchor="middle"
-                  fontSize={(s.totalLayers >= 11 ? 3.55 : 3.95) * Math.max(0.85, sx)}
-                  fontWeight="700"
-                  fill={labelColor}
-                >
-                  W{li + 1}
-                </text>
-              </g>
-            );
-          })}
-
-          {s.sheetPileStyle &&
-            [0.24, 0.52, 0.78].map((frac, si) => (
-              <line
-                key={si}
-                x1={wallLeftX}
-                y1={shaftTopY + wallH * frac}
-                x2={wallRightX + wallThick}
-                y2={shaftTopY + wallH * frac}
-                stroke="#ca8a04"
-                strokeWidth={1.2}
+          {/* Outer Lip (Only for concrete layer shafts, NOT sheet pile) */}
+          {!s.sheetPileStyle && (
+            <>
+              <rect
+                x={wallLeftX - 2}
+                y={shaftTopY}
+                width={wallThick + 2}
+                height={3}
+                fill={getLayerFill(s, 0, bSnap) ?? '#ffffff'}
+                stroke={getLayerFill(s, 0, bSnap) ? '#14532d' : colors.remainingOutline}
+                strokeWidth={0.5}
               />
-            ))}
+              <rect
+                x={wallRightX}
+                y={shaftTopY}
+                width={wallThick + 2}
+                height={3}
+                fill={getLayerFill(s, 0, bSnap) ?? '#ffffff'}
+                stroke={getLayerFill(s, 0, bSnap) ? '#14532d' : colors.remainingOutline}
+                strokeWidth={0.5}
+              />
+            </>
+          )}
+
+          {/* Shaft Walls: either Steel Sheet Pile (4 bottom-to-top divisions, NO W1..W12 labels) or Layer-based W1..WN */}
+          {s.sheetPileStyle ? (
+            <g>
+              {(() => {
+                const pileW = Math.max(5.5, wallThick * 0.6);
+                const rightPileX = wallRightX + wallThick - pileW;
+                const segCount = Math.max(1, s.totalLayers);
+                const segH = wallH / segCount;
+                const toeH = 8.5;
+                const btmFill = getLayerFill(s, 0, bSnap);
+                const btmStroke = btmFill ? '#14532d' : colors.remainingOutline;
+
+                return (
+                  <>
+                    {/* 4 Sheet Pile Divisions counted BOTTOM -> TOP (li=0 at bottom, li=segCount-1 at top) */}
+                    {Array.from({ length: segCount }).map((_, li) => {
+                      const ly = shaftTopY + wallH - (li + 1) * segH;
+                      const fill = getLayerFill(s, li, bSnap);
+                      const stroke = fill ? '#14532d' : colors.remainingOutline;
+                      return (
+                        <g key={li}>
+                          <rect
+                            x={wallLeftX}
+                            y={ly}
+                            width={pileW}
+                            height={segH}
+                            fill={fill ?? '#ffffff'}
+                            stroke={stroke}
+                            strokeWidth={0.6}
+                          />
+                          <rect
+                            x={rightPileX}
+                            y={ly}
+                            width={pileW}
+                            height={segH}
+                            fill={fill ?? '#ffffff'}
+                            stroke={stroke}
+                            strokeWidth={0.6}
+                          />
+                          {/* Interlock rib line down center of each sheet pile */}
+                          <line
+                            x1={wallLeftX + pileW * 0.5}
+                            y1={ly}
+                            x2={wallLeftX + pileW * 0.5}
+                            y2={ly + segH}
+                            stroke={stroke}
+                            strokeWidth={0.4}
+                            strokeOpacity={0.65}
+                          />
+                          <line
+                            x1={rightPileX + pileW * 0.5}
+                            y1={ly}
+                            x2={rightPileX + pileW * 0.5}
+                            y2={ly + segH}
+                            stroke={stroke}
+                            strokeWidth={0.4}
+                            strokeOpacity={0.65}
+                          />
+                        </g>
+                      );
+                    })}
+
+                    {/* Sheet Pile Toe Extensions below Bottom Slab (matches AutoCAD sheet pile drawing) */}
+                    <rect
+                      x={wallLeftX}
+                      y={shaftTopY + wallH + botSlabH}
+                      width={pileW}
+                      height={toeH}
+                      fill={btmFill ?? '#ffffff'}
+                      stroke={btmStroke}
+                      strokeWidth={0.55}
+                    />
+                    <rect
+                      x={rightPileX}
+                      y={shaftTopY + wallH + botSlabH}
+                      width={pileW}
+                      height={toeH}
+                      fill={btmFill ?? '#ffffff'}
+                      stroke={btmStroke}
+                      strokeWidth={0.55}
+                    />
+                    <line
+                      x1={wallLeftX + pileW * 0.5}
+                      y1={shaftTopY + wallH + botSlabH}
+                      x2={wallLeftX + pileW * 0.5}
+                      y2={shaftTopY + wallH + botSlabH + toeH}
+                      stroke={btmStroke}
+                      strokeWidth={0.4}
+                      strokeOpacity={0.65}
+                    />
+                    <line
+                      x1={rightPileX + pileW * 0.5}
+                      y1={shaftTopY + wallH + botSlabH}
+                      x2={rightPileX + pileW * 0.5}
+                      y2={shaftTopY + wallH + botSlabH + toeH}
+                      stroke={btmStroke}
+                      strokeWidth={0.4}
+                      strokeOpacity={0.65}
+                    />
+
+                    {/* Horizontal Steel Strut / Waler Bracing Levels + Yellow Outer Brackets (bottom -> top) */}
+                    {[...Array.from({ length: Math.max(0, segCount - 1) }).map((_, k) => shaftTopY + wallH - (k + 1) * segH), shaftTopY + 1.5].map((strutY, si) => (
+                      <g key={si}>
+                        {/* Yellow waler/strut bracket pads on left & right sheet piles */}
+                        <rect
+                          x={wallLeftX - 2}
+                          y={strutY - 1.3}
+                          width={pileW + 4}
+                          height={2.6}
+                          fill="#facc15"
+                          stroke="#854d0e"
+                          strokeWidth={0.35}
+                        />
+                        <rect
+                          x={rightPileX - 2}
+                          y={strutY - 1.3}
+                          width={pileW + 4}
+                          height={2.6}
+                          fill="#facc15"
+                          stroke="#854d0e"
+                          strokeWidth={0.35}
+                        />
+                        {/* Horizontal strut beam across shaft */}
+                        <line
+                          x1={wallLeftX - 3.5}
+                          y1={strutY}
+                          x2={wallRightX + wallThick + 3.5}
+                          y2={strutY}
+                          stroke="#b91c1c"
+                          strokeWidth={0.85}
+                        />
+                      </g>
+                    ))}
+                  </>
+                );
+              })()}
+            </g>
+          ) : (
+            Array.from({ length: s.totalLayers }).map((_, li) => {
+              const ly = shaftTopY + li * layerH;
+              const fill = getLayerFill(s, li, bSnap);
+              const stroke = fill ? '#14532d' : colors.remainingOutline;
+              const labelColor =
+                fill === colors.overallShaft || fill === currHighlight
+                  ? '#052e16'
+                  : fill
+                  ? '#ffffff'
+                  : '#dc2626';
+              return (
+                <g key={li}>
+                  <rect
+                    x={wallLeftX}
+                    y={ly}
+                    width={wallThick}
+                    height={Math.max(2, layerH - 0.45)}
+                    fill={fill ?? '#ffffff'}
+                    stroke={stroke}
+                    strokeWidth={0.55}
+                  />
+                  <rect
+                    x={wallRightX}
+                    y={ly}
+                    width={wallThick}
+                    height={Math.max(2, layerH - 0.45)}
+                    fill={fill ?? '#ffffff'}
+                    stroke={stroke}
+                    strokeWidth={0.55}
+                  />
+                  <text
+                    x={wallLeftX + wallThick / 2}
+                    y={ly + layerH * 0.72}
+                    textAnchor="middle"
+                    fontSize={(s.totalLayers >= 11 ? 3.55 : 3.95) * Math.max(0.85, sx)}
+                    fontWeight="700"
+                    fill={labelColor}
+                  >
+                    W{li + 1}
+                  </text>
+                </g>
+              );
+            })
+          )}
 
           {/* Bottom Slab */}
           {(() => {
@@ -964,6 +1103,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       ps.sinkingStatus,
       baseline.pumpSinkingStatus === 'complete'
     );
+    const sinkRemM = Math.max(0, Number((ps.totalHeightM - ps.sinkingCompletedM).toFixed(2)));
     const mrDur = calcDurationDays(ps.machineRoom.sDate, ps.machineRoom.eDate);
 
     const lvl2H = compactPump ? 21 : 24;
@@ -1266,11 +1406,12 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           x={structX + structW / 2}
           y={subTopY + subH + 17.5}
           textAnchor="middle"
-          fontSize={compactPump ? 4.7 : 5.2}
+          fontSize={compactPump ? 4.35 : 4.9}
           fontWeight="700"
           fill={sinkVisual.badgeText}
         >
-          Sinking: {ps.sinkingCompletedM}m [{ps.sinkingStatus.toUpperCase()}]
+          Sinking: {ps.sinkingCompletedM}m [{ps.sinkingStatus.toUpperCase()}
+          {ps.sinkingStatus !== 'complete' ? ` | Rem: ${sinkRemM}m` : ''}]
         </text>
 
         {/* RIGHT SIDE 2-PART STATUS TABLE */}
@@ -1406,8 +1547,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 <text x={tblX + 2.5} y={boxY + 9.5} fontSize={tblW < 130 ? 3.45 : tblW < 155 ? 3.9 : 4.5} fontWeight="700" fill="#1e3a8a">
                   Total H: {ps.totalHeightM}m | Casting: {ps.castingCompleteM}m
                 </text>
-                <text x={tblX + 2.5} y={boxY + (compactPump ? 19.5 : 21)} fontSize={tblW < 130 ? 3.55 : tblW < 155 ? 4.0 : 4.6} fontWeight="700" fill={sinkVisual.badgeText}>
+                <text x={tblX + 2.5} y={boxY + (compactPump ? 19.5 : 21)} fontSize={tblW < 130 ? 3.25 : tblW < 155 ? 3.7 : 4.3} fontWeight="700" fill={sinkVisual.badgeText}>
                   Sinking: {ps.sinkingCompletedM}m — {ps.sinkingStatus.toUpperCase()}
+                  {ps.sinkingStatus !== 'complete' ? ` (Rem: ${sinkRemM}m)` : ''}
                 </text>
               </g>
             );
@@ -1705,11 +1847,14 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 <g>
                   <rect x={16} y={114} width={242} height={46} rx={3} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.7} />
                   <text x={24} y={127} fontSize={6.8} fontWeight="700" fill="#166534">PUMP STATION (GOLAPBAG SPS):</text>
-                  <text x={24} y={139} fontSize={6.6} fill="#0f172a">
-                    - Lower: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Layers | Sinking: {pumpStation.sinkingCompletedM}m [{pumpStation.sinkingStatus.toUpperCase()}]
+                  <text x={24} y={139} fontSize={6.5} fill="#0f172a">
+                    - Lower: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Layers (Cast: {pumpStation.castingCompleteM}m) | Room: {pumpStation.machineRoom.status.toUpperCase()}
                   </text>
-                  <text x={24} y={151} fontSize={6.6} fontWeight="700" fill="#1e3a8a">
-                    - Machine Room: {pumpStation.machineRoom.status.toUpperCase()}
+                  <text x={24} y={151} fontSize={6.5} fontWeight="700" fill="#0f766e">
+                    - Sinking: {pumpStation.sinkingCompletedM}m / {pumpStation.totalHeightM}m [{pumpStation.sinkingStatus.toUpperCase()}
+                    {pumpStation.sinkingStatus !== 'complete'
+                      ? ` | Rem: ${Math.max(0, Number((pumpStation.totalHeightM - pumpStation.sinkingCompletedM).toFixed(2)))}m`
+                      : ''}]
                   </text>
                 </g>
               ) : (
@@ -1728,7 +1873,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               </text>
               <text x={284} y={55} fontSize={7.6} fill="#0f172a">TOTAL MANHOLE</text>
               <text x={536} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {waSummary.totalManholes} Nos</text>
-              <text x={284} y={71} fontSize={7.6} fill="#15803d" fontWeight="600">COMPLETED (BOTH PARTS)</text>
+              <text x={284} y={71} fontSize={7.6} fill="#15803d" fontWeight="600">COMPLETED MANHOLE</text>
               <text x={536} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#15803d">: {String(waSummary.completedManholes).padStart(2, '0')} Nos</text>
               <text x={284} y={87} fontSize={7.6} fill="#b45309" fontWeight="600">ON-GOING MANHOLE</text>
               <text x={536} y={87} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#b45309">: {String(waSummary.ongoingManholes).padStart(2, '0')} Nos</text>
@@ -2095,7 +2240,8 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               </text>
               <text x={7} y={66} fontSize={7.2} fontWeight="600" fill="#0f172a">WA Manholes</text>
               <text x={216} y={66} textAnchor="end" fontSize={7.1} fontWeight="700" fill="#1d4ed8">
-                Both:{waSummary.completedManholes} | Cast:{waSummary.castingCompleteCount} | Ring:{waSummary.precastCompleteCount}
+                {waSummary.completedManholes > 0 ? `Done:${waSummary.completedManholes} | ` : ''}
+                Ong:{waSummary.ongoingManholes} | Cast:{waSummary.castingCompleteCount} | Ring:{waSummary.precastCompleteCount}
               </text>
               <text x={7} y={81} fontSize={7.2} fontWeight="600" fill="#0f172a">WA Tunnel</text>
               <text x={216} y={81} textAnchor="end" fontSize={7.1} fontWeight="700" fill="#a21caf">
@@ -2113,8 +2259,11 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               <text x={12} y={151} fontSize={6.8} fill="#0f172a">
                 - Lower: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Layers (Cast: {pumpStation.castingCompleteM}m)
               </text>
-              <text x={12} y={168} fontSize={6.8} fontWeight="700" fill="#0f766e">
-                - Sinking: {pumpStation.sinkingCompletedM}m / {pumpStation.totalHeightM}m [{pumpStation.sinkingStatus.toUpperCase()}]
+              <text x={12} y={168} fontSize={6.5} fontWeight="700" fill="#0f766e">
+                - Sinking: {pumpStation.sinkingCompletedM}m / {pumpStation.totalHeightM}m [{pumpStation.sinkingStatus.toUpperCase()}
+                {pumpStation.sinkingStatus !== 'complete'
+                  ? ` | Rem: ${Math.max(0, Number((pumpStation.totalHeightM - pumpStation.sinkingCompletedM).toFixed(2)))}m`
+                  : ''}]
               </text>
               <text x={12} y={185} fontSize={6.8} fontWeight="700" fill="#1e3a8a">
                 - Upper Room: {pumpStation.machineRoom.status.toUpperCase()}
@@ -2152,8 +2301,8 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               <text x={235} y={182} fontSize={6.8} fontWeight="700" fill="#a21caf">
                 Tunnel: {(wcSummary.completedTunnelLengthM / 1000).toFixed(3)} / {(wcSummary.totalTunnelLengthM / 1000).toFixed(3)} km ({wcSummary.tunnelPctOverall.toFixed(1)}%)
               </text>
-              <text x={235} y={197} fontSize={6.6} fill="#334155">
-                Manholes: Done {wcSummary.completedManholes} / {wcSummary.totalManholes}
+              <text x={235} y={197} fontSize={6.5} fill="#334155">
+                Manholes: {wcSummary.completedManholes > 0 ? `Done ${wcSummary.completedManholes} | ` : ''}Ong {wcSummary.ongoingManholes} | Cast {wcSummary.castingCompleteCount} | Ring {wcSummary.precastCompleteCount}
               </text>
               <text x={235} y={213} fontSize={6.6} fill="#475569">
                 Status: {wcSummary.completedTunnelLengthM > 0 || wcSummary.completedShafts > 0 ? 'Active Construction' : 'Not Started (Blank)'}

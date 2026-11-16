@@ -219,8 +219,9 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
   };
 
   const handleTotalLayersChange = (newTotal: number) => {
-    const clamped = Math.max(6, Math.min(13, newTotal));
-    const newFlags = resizeShaftLayers(shaft.layerFlags, clamped);
+    const minL = shaft.sheetPileStyle ? 4 : 6;
+    const clamped = Math.max(minL, Math.min(13, newTotal));
+    const newFlags = resizeShaftLayers(shaft.layerFlags, clamped, minL);
     onUpdateShaft(shaft.id, {
       totalLayers: clamped,
       layerFlags: newFlags,
@@ -601,11 +602,18 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
 
                 {/* Sinking Status Control (Complete / On-going / Remaining) */}
                 <div className="rounded-md border border-teal-200 bg-teal-50/60 p-2 space-y-1.5">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="text-[11px] font-bold text-teal-950">
                       {lang === 'bn' ? 'Sinking কাজের অবস্থা (Status)' : 'Sinking Work Status'}
                     </span>
-                    <StatusChip status={state.pumpStation.sinkingStatus} />
+                    <div className="flex items-center gap-1.5">
+                      {state.pumpStation.sinkingStatus !== 'complete' && (
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-300">
+                          Rem: {Math.max(0, Number((state.pumpStation.totalHeightM - state.pumpStation.sinkingCompletedM).toFixed(2)))}m
+                        </span>
+                      )}
+                      <StatusChip status={state.pumpStation.sinkingStatus} />
+                    </div>
                   </div>
                   <div className="grid grid-cols-3 gap-1.5">
                     {(['complete', 'ongoing', 'remaining'] as WorkStatus[]).map((st) => {
@@ -753,14 +761,20 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               <StatusChip status={shStatus} />
             </div>
 
-            {/* Total Layers (6 to 13) + Completed Stepper */}
+            {/* Total Layers (4..13 for Sheet Pile, 6..13 for Wall Layers) + Completed Stepper */}
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-md bg-slate-50 p-2 border border-slate-200">
-                <div className="text-[11px] font-medium text-slate-600">{L.totalLayers}</div>
+                <div className="text-[11px] font-medium text-slate-600">
+                  {shaft.sheetPileStyle
+                    ? lang === 'bn'
+                      ? 'Sheet Pile ভাগ (নিচ→উপর)'
+                      : 'Sheet Pile Divisions'
+                    : L.totalLayers}
+                </div>
                 <div className="mt-1 flex items-center gap-1.5">
                   <button
                     onClick={() => handleTotalLayersChange(shaft.totalLayers - 1)}
-                    disabled={shaft.totalLayers <= 6}
+                    disabled={shaft.totalLayers <= (shaft.sheetPileStyle ? 4 : 6)}
                     className="h-7 w-7 rounded border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
                   >
                     -
@@ -802,10 +816,14 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               </div>
             </div>
 
-            {/* Individual Clickable Layer Pills W1..WN */}
+            {/* Individual Clickable Layer/Sheet-Pile Pills */}
             <div>
               <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500">
-                <span>Click layers (W1–W{shaft.totalLayers}):</span>
+                <span>
+                  {shaft.sheetPileStyle
+                    ? `Sheet Pile (Bottom 1 → Top ${shaft.totalLayers}):`
+                    : `Click layers (W1–W${shaft.totalLayers}):`}
+                </span>
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
@@ -836,6 +854,7 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                   const done = Boolean(shaft.layerFlags[li]);
                   const prevDone = Boolean(bSnap?.layerFlags?.[li]);
                   const isNewInPeriod = state.viewMode !== 'overall' && done && !prevDone;
+                  const pillLabel = shaft.sheetPileStyle ? `SP${li + 1}` : `W${li + 1}`;
                   return (
                     <button
                       key={li}
@@ -849,13 +868,13 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                       }`}
                       title={
                         isNewInPeriod
-                          ? `W${li + 1}: New this period!`
+                          ? `${pillLabel}: New this period!`
                           : done
-                          ? `W${li + 1}: Completed`
-                          : `W${li + 1}: Remaining`
+                          ? `${pillLabel}: Completed`
+                          : `${pillLabel}: Remaining`
                       }
                     >
-                      W{li + 1}
+                      {pillLabel}
                     </button>
                   );
                 })}
@@ -879,12 +898,23 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 <input
                   type="checkbox"
                   checked={shaft.sheetPileStyle}
-                  onChange={(e) =>
-                    onUpdateShaft(shaft.id, { sheetPileStyle: e.target.checked })
-                  }
+                  onChange={(e) => {
+                    const nextSp = e.target.checked;
+                    if (nextSp && shaft.totalLayers > 4) {
+                      const done = shaft.layerFlags.slice(0, shaft.totalLayers).filter(Boolean).length;
+                      const divDone = Math.round((done / shaft.totalLayers) * 4);
+                      onUpdateShaft(shaft.id, {
+                        sheetPileStyle: true,
+                        totalLayers: 4,
+                        layerFlags: Array.from({ length: 4 }, (_, i) => i < divDone),
+                      });
+                    } else {
+                      onUpdateShaft(shaft.id, { sheetPileStyle: nextSp });
+                    }
+                  }}
                   className="h-3.5 w-3.5 rounded border-slate-300"
                 />
-                Strutted Wall
+                Sheet Pile (4 Divs)
               </label>
             </div>
 
