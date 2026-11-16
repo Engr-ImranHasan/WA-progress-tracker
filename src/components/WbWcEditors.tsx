@@ -816,9 +816,10 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-semibold text-slate-600">Checked By</label>
+                <label className="block text-[10px] font-semibold text-slate-600">Contractor Representative</label>
                 <input
                   type="text"
+                  aria-label="Title Block Contractor Representative"
                   value={state.settings.checkedBy}
                   onChange={(e) => onUpdateSettings({ checkedBy: e.target.value })}
                   className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1"

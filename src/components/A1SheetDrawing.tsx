@@ -165,9 +165,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           />
           <text
             x={bx + boxW / 2}
-            y={yTop + 9.2}
+            y={yTop + 9.0}
             textAnchor="middle"
-            fontSize={boxW < 8 ? 3.9 : 4.5}
+            fontSize={boxW < 10 ? 3.85 : 4.4}
             fontWeight="700"
             fill={isDarkBg ? '#ffffff' : '#1e3a8a'}
           >
@@ -903,7 +903,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     const isPumpSelected = selectedShaftId === 'PUMP_STATION';
     const compactPump = h < 224 || w < 340;
     const structX = x + 6;
-    const structW = compactPump ? Math.min(118, w * 0.42) : Math.min(166, w * 0.43);
+    const structW = compactPump ? Math.min(108, w * 0.46) : Math.min(162, w * 0.43);
 
     const mrTopY = y + (compactPump ? 17 : 20);
     const mrH = compactPump ? 50 : 56;
@@ -916,8 +916,8 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     const layerCount = Math.max(1, ps.layers.length);
     const layerH = bodyH / layerCount;
 
-    const tblX = structX + structW + (compactPump ? 5 : 8);
-    const tblW = Math.max(105, Math.min(compactPump ? 146 : 196, x + w - tblX - 2));
+    const tblX = structX + structW + (compactPump ? 4 : 8);
+    const tblW = Math.max(96, Math.min(compactPump ? 116 : 172, x + w - tblX - 2));
 
     const resolvePumpFill = (
       status: WorkStatus,
@@ -1294,13 +1294,13 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             stroke="#1e3a8a"
             strokeWidth={0.55}
           />
-          <text x={tblX + 3} y={y + 24.5} fontSize={tblW < 155 ? 3.8 : 4.4} fontWeight="700" fill="#1e3a8a">
+          <text x={tblX + 2.5} y={y + 24.5} fontSize={tblW < 130 ? 3.35 : tblW < 155 ? 3.8 : 4.4} fontWeight="700" fill="#1e3a8a">
             UPPER: MACHINE ROOM
           </text>
           <rect
-            x={tblX + tblW - (tblW < 155 ? 34 : 40)}
+            x={tblX + tblW - (tblW < 130 ? 29 : tblW < 155 ? 34 : 40)}
             y={y + 18.2}
-            width={tblW < 155 ? 32 : 37}
+            width={tblW < 130 ? 27.5 : tblW < 155 ? 32 : 37}
             height={8.5}
             rx={1.5}
             fill={mrVisual.badgeBg}
@@ -1308,16 +1308,16 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             strokeWidth={0.45}
           />
           <text
-            x={tblX + tblW - (tblW < 155 ? 18 : 21.5)}
-            y={y + 24.2}
+            x={tblX + tblW - (tblW < 130 ? 15.2 : tblW < 155 ? 18 : 21.5)}
+            y={y + 24.0}
             textAnchor="middle"
-            fontSize={tblW < 155 ? 3.4 : 3.9}
+            fontSize={tblW < 130 ? 2.9 : tblW < 155 ? 3.4 : 3.9}
             fontWeight="700"
             fill={mrVisual.badgeText}
           >
             {ps.machineRoom.status.toUpperCase()}
           </text>
-          <text x={tblX + 3} y={y + 36} fontSize={tblW < 155 ? 3.8 : 4.4} fill="#334155">
+          <text x={tblX + 2.5} y={y + 36} fontSize={tblW < 130 ? 3.45 : tblW < 155 ? 3.8 : 4.4} fill="#334155">
             S: {formatDateDisplay(ps.machineRoom.sDate)} | E:{' '}
             {ps.machineRoom.eDate
               ? formatDateDisplay(ps.machineRoom.eDate)
@@ -1325,7 +1325,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               ? 'On-going'
               : '-'}
           </text>
-          <text x={tblX + 3} y={y + (compactPump ? 44 : 47)} fontSize={tblW < 155 ? 3.8 : 4.4} fontWeight="700" fill={mrVisual.badgeText}>
+          <text x={tblX + 2.5} y={y + (compactPump ? 44 : 47)} fontSize={tblW < 130 ? 3.45 : tblW < 155 ? 3.8 : 4.4} fontWeight="700" fill={mrVisual.badgeText}>
             Dur: {mrDur !== null ? `${mrDur} Days` : ps.machineRoom.status === 'ongoing' ? 'On-going' : 'Remaining'}
           </text>
 
@@ -1334,7 +1334,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             x={tblX + tblW / 2}
             y={y + (compactPump ? 55 : 60)}
             textAnchor="middle"
-            fontSize={tblW < 155 ? 4.1 : 4.7}
+            fontSize={tblW < 130 ? 3.65 : tblW < 155 ? 4.1 : 4.7}
             fontWeight="700"
             fill="#1e3a8a"
           >
@@ -1353,7 +1353,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             const rowY = y + (compactPump ? 58 : 63) + rowIdx * tblRowH;
             const dur = calcDurationDays(ly.sDate, ly.eDate);
             const vis = resolvePumpFill(ly.status, Boolean(baseline.pumpLayersDone?.[origIdx]));
-            const badgeW = tblW < 155 ? 31 : 40;
+            const badgeW = tblW < 130 ? 26 : tblW < 155 ? 31 : 40;
             return (
               <g key={ly.name}>
                 {rowIdx > 0 && (
@@ -1372,17 +1372,17 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                   x={tblX + badgeW / 2}
                   y={rowY + tblRowH * 0.58}
                   textAnchor="middle"
-                  fontSize={tblW < 155 ? 3.9 : 4.6}
+                  fontSize={tblW < 130 ? 3.45 : tblW < 155 ? 3.9 : 4.6}
                   fontWeight="700"
                   fill={vis.badgeText}
                 >
                   {ly.name}
                 </text>
-                <text x={tblX + badgeW + 3} y={rowY + tblRowH * 0.4} fontSize={tblW < 155 ? 3.6 : 4.2} fill="#334155">
+                <text x={tblX + badgeW + 2.5} y={rowY + tblRowH * 0.4} fontSize={tblW < 130 ? 3.25 : tblW < 155 ? 3.6 : 4.2} fill="#334155">
                   S: {formatDateDisplay(ly.sDate)} | E:{' '}
                   {ly.eDate ? formatDateDisplay(ly.eDate) : ly.status === 'ongoing' ? 'On-going' : '-'}
                 </text>
-                <text x={tblX + badgeW + 3} y={rowY + tblRowH * 0.8} fontSize={tblW < 155 ? 3.6 : 4.2} fontWeight="700" fill={vis.badgeText}>
+                <text x={tblX + badgeW + 2.5} y={rowY + tblRowH * 0.8} fontSize={tblW < 130 ? 3.25 : tblW < 155 ? 3.6 : 4.2} fontWeight="700" fill={vis.badgeText}>
                   Dur: {dur !== null ? `${dur}d` : '-'} ({ly.status.toUpperCase()})
                 </text>
               </g>
@@ -1403,10 +1403,10 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                   stroke="#1e3a8a"
                   strokeWidth={0.65}
                 />
-                <text x={tblX + 3.5} y={boxY + 9.5} fontSize={tblW < 155 ? 3.9 : 4.5} fontWeight="700" fill="#1e3a8a">
+                <text x={tblX + 2.5} y={boxY + 9.5} fontSize={tblW < 130 ? 3.45 : tblW < 155 ? 3.9 : 4.5} fontWeight="700" fill="#1e3a8a">
                   Total H: {ps.totalHeightM}m | Casting: {ps.castingCompleteM}m
                 </text>
-                <text x={tblX + 3.5} y={boxY + (compactPump ? 19.5 : 21)} fontSize={tblW < 155 ? 4.0 : 4.6} fontWeight="700" fill={sinkVisual.badgeText}>
+                <text x={tblX + 2.5} y={boxY + (compactPump ? 19.5 : 21)} fontSize={tblW < 130 ? 3.55 : tblW < 155 ? 4.0 : 4.6} fontWeight="700" fill={sinkVisual.badgeText}>
                   Sinking: {ps.sinkingCompletedM}m — {ps.sinkingStatus.toUpperCase()}
                 </text>
               </g>
@@ -1430,16 +1430,23 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     includeMapKey: boolean
   ) => {
     const compact = legW < 280;
-    const fTitle = compact ? 7.8 : 9.5;
-    const fItem = compact ? 5.9 : 7.2;
-    const rowStep = includeMapKey ? (compact ? 21 : 21) : compact ? 22 : 24;
+    const fTitle = compact ? 9.1 : 10.2;
+    const fItem = compact ? 7.5 : 8.0;
+    const hdrH = compact ? 22 : 21;
+    const rowStep = compact
+      ? includeMapKey
+        ? 28
+        : 30
+      : includeMapKey
+      ? 21
+      : 24;
 
     return (
       <g>
         {/* COLOR LEGEND */}
         <rect x={legX} y={legY} width={legW} height={legH} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
-        <rect x={legX} y={legY} width={legW} height={20} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
-        <text x={legX + legW / 2} y={legY + 13.5} textAnchor="middle" fontSize={fTitle} fontWeight="700" fill="#1e3a8a">
+        <rect x={legX} y={legY} width={legW} height={hdrH} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+        <text x={legX + legW / 2} y={legY + (compact ? 14.5 : 14)} textAnchor="middle" fontSize={fTitle} fontWeight="700" fill="#1e3a8a">
           COLOR LEGEND ({viewMode.toUpperCase()})
         </text>
 
@@ -1477,19 +1484,19 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               },
             ]
         ).map((item, i) => (
-          <g key={item.label} transform={`translate(${legX + 8}, ${legY + 28 + i * rowStep})`}>
+          <g key={item.label} transform={`translate(${legX + 9}, ${legY + (compact ? 32 : 28) + i * rowStep})`}>
             <rect
               x={0}
               y={0}
-              width={compact ? 14 : 18}
-              height={compact ? 10 : 12}
+              width={compact ? 18 : 19}
+              height={compact ? 13 : 12.5}
               fill={item.c}
               stroke={item.stroke || '#334155'}
-              strokeWidth={0.85}
+              strokeWidth={0.9}
             />
             <text
-              x={compact ? 19 : 25}
-              y={compact ? 8 : 9.5}
+              x={compact ? 25 : 26}
+              y={compact ? 10 : 9.8}
               fontSize={fItem}
               fontWeight={'bold' in item && item.bold ? '700' : '600'}
               fill={'bold' in item && item.bold ? '#b45309' : '#0f172a'}
@@ -1499,13 +1506,13 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           </g>
         ))}
 
-        <g transform={`translate(${legX + 8}, ${legY + legH - 10})`}>
-          <circle cx={4} cy={-2} r={2.8} fill="#16a34a" />
-          <text x={10} y={1} fontSize={compact ? 5.4 : 6.4} fill="#334155">Complete</text>
-          <circle cx={compact ? 52 : 66} cy={-2} r={2.8} fill="#f59e0b" />
-          <text x={compact ? 58 : 72} y={1} fontSize={compact ? 5.4 : 6.4} fill="#334155">On-going</text>
-          <circle cx={compact ? 105 : 132} cy={-2} r={2.8} fill="#dc2626" />
-          <text x={compact ? 111 : 138} y={1} fontSize={compact ? 5.4 : 6.4} fill="#334155">Rem.</text>
+        <g transform={`translate(${legX + 10}, ${legY + legH - 10})`}>
+          <circle cx={4} cy={-2.5} r={compact ? 3.4 : 3.0} fill="#16a34a" />
+          <text x={11} y={1} fontSize={compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">Complete</text>
+          <circle cx={compact ? 66 : 70} cy={-2.5} r={compact ? 3.4 : 3.0} fill="#f59e0b" />
+          <text x={compact ? 73 : 77} y={1} fontSize={compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">On-going</text>
+          <circle cx={compact ? 130 : 138} cy={-2.5} r={compact ? 3.4 : 3.0} fill="#dc2626" />
+          <text x={compact ? 137 : 145} y={1} fontSize={compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">Rem.</text>
         </g>
 
         {/* TITLE BLOCK (Click anywhere to edit Title Block fields) */}
@@ -1521,8 +1528,8 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           }
         >
           <rect x={titleX} y={titleY} width={titleW} height={titleH} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
-          <rect x={titleX} y={titleY} width={titleW} height={20} fill="#1e3a8a" />
-          <text x={titleX + titleW / 2} y={titleY + 13.5} textAnchor="middle" fontSize={fTitle} fontWeight="700" fill="#ffffff">
+          <rect x={titleX} y={titleY} width={titleW} height={hdrH} fill="#1e3a8a" />
+          <text x={titleX + titleW / 2} y={titleY + (compact ? 14.5 : 14)} textAnchor="middle" fontSize={fTitle} fontWeight="700" fill="#ffffff">
             PROJECT DRAWING TITLE BLOCK
           </text>
           {[
@@ -1530,20 +1537,33 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             ['Contractor:', settings.contractorName],
             ['Section:', settings.customTitleBlockSection?.trim() || activeSection.toUpperCase()],
             ['Prepared:', settings.preparedBy],
-            ['Checked:', settings.checkedBy],
+            ['Contractor Representative:', settings.checkedBy],
             ['Date:', formatDateDisplay(settings.reportDate)],
             ['Dwg No:', `${settings.drawingNo}${settings.revision ? ` (${settings.revision})` : ''}`],
             ['Sheet:', settings.sheetFormatLabel?.trim() || 'ISO A1 (841 x 594 mm)'],
           ].map(([k, v], i) => {
-            const stepY = (titleH - 22) / 8;
+            const stepY = (titleH - hdrH - 2) / 8;
+            const isLongKey = k.startsWith('Contractor Rep');
             return (
-              <g key={k} transform={`translate(${titleX}, ${titleY + 20 + i * stepY})`}>
+              <g key={k} transform={`translate(${titleX}, ${titleY + hdrH + i * stepY})`}>
                 <line x1={0} y1={stepY} x2={titleW} y2={stepY} stroke="#cbd5e1" strokeWidth={0.55} />
-                <text x={5} y={stepY * 0.68} fontSize={compact ? 5.6 : 6.7} fontWeight="700" fill="#475569">
+                <text
+                  x={5}
+                  y={stepY * 0.68}
+                  fontSize={compact ? (isLongKey ? 6.0 : 7.2) : isLongKey ? 7.0 : 7.6}
+                  fontWeight="700"
+                  fill="#475569"
+                >
                   {k}
                 </text>
-                <text x={compact ? 45 : 84} y={stepY * 0.68} fontSize={compact ? 5.6 : 7.0} fontWeight="600" fill="#0f172a">
-                  {trunc(v, compact ? 32 : 40)}
+                <text
+                  x={compact ? 92 : 104}
+                  y={stepY * 0.68}
+                  fontSize={compact ? 7.1 : 7.8}
+                  fontWeight="600"
+                  fill="#0f172a"
+                >
+                  {trunc(v, compact ? 28 : 42)}
                 </text>
               </g>
             );
@@ -1627,9 +1647,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
         const colW = gridW / cols;
         const rowH = 232;
         const pumpX =
-          settings.layoutMode === '12col' ? gridX + colW * 1.25 : gridX + colW * 7.25;
+          settings.layoutMode === '12col' ? gridX + colW * 1.35 : gridX + colW * 7.36;
         const pumpW =
-          settings.layoutMode === '12col' ? colW * 4.5 : colW * 2.75;
+          settings.layoutMode === '12col' ? colW * 4.4 : colW * 2.64;
 
         return (
           <g>
@@ -1991,10 +2011,10 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
         const gridY = 55;
         const gridW = 1584;
         const rowH = 216; // Row 2 divider ends at 55 + 3*216 - 3 = 700; Row 3 ends at 919!
-        // WA-36 is idx=36 -> col=3 (x = 46 + 3*144 = 478 .. 622)
-        // Slimmed & left-shifted SPS right beside WA-36 so WB & WC get huge side-by-side room:
-        const pumpX = 630;
-        const pumpW = 280; // Ends at 910, leaving x=922..1664 completely open for WB + WC!
+        // WA-36 right wall ends at x=594.4. Shift SPS right to x=678 so WA-36 -> Pump Station tunnel bar
+        // gets 89.6px of full un-compressed spacing while staying cleanly left of WB MAP (x=922):
+        const pumpX = 678;
+        const pumpW = 236; // Ends at 914 (8px clean gap before WB MAP at x=922)
 
         return (
           <g>
@@ -2025,7 +2045,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             {settings.showPumpStation &&
               renderPumpStation(pumpStation, pumpX, gridY + rowH * 3 + 2, pumpW, 212)}
 
-            {/* 2. WB & WC MAPS SIDE BY SIDE (PASHAPASHI) AT FULL LOWER-RIGHT HEIGHT (y=704..1168, h=464!) */}
+            {/* 2. WB & WC MAPS SIDE BY SIDE (PASHAPASHI) AT EXACT POSITION (y=704..1168, h=464!) */}
             <WbNavigationMapGroup
               wb={wbData}
               x={922}
@@ -2055,91 +2075,91 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               clipIdSuffix="combined-wc"
             />
 
-            {/* 3. COMPACT FOOTER BOXES SHIFTED LEFT (x=22..912, y=936..1168) */}
+            {/* 3. LARGER-TEXT FOOTER BOXES (x=22..912, y=936..1168) */}
             <g transform="translate(22, 936)">
-              {/* Compact Combined Summary (WA + Pump + WB + WC) */}
-              <rect x={0} y={0} width={450} height={232} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
-              <rect x={0} y={0} width={450} height={20} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
-              <text x={225} y={13.5} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a">
+              {/* Combined Summary (WA + Pump + WB + WC) */}
+              <rect x={0} y={0} width={442} height={232} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+              <rect x={0} y={0} width={442} height={22} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+              <text x={221} y={14.5} textAnchor="middle" fontSize={9.4} fontWeight="700" fill="#1e3a8a">
                 COMBINED PROGRESS SUMMARY (WA, WB, WC & SPS)
               </text>
-              <line x1={226} y1={20} x2={226} y2={232} stroke="#1e3a8a" strokeWidth={0.7} />
+              <line x1={222} y1={22} x2={222} y2={232} stroke="#1e3a8a" strokeWidth={0.7} />
 
               {/* Left Col: WA Shafts + Manholes + Pump Station */}
-              <text x={113} y={33} textAnchor="middle" fontSize={6.6} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+              <text x={111} y={35} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
                 WA SHAFT, MANHOLE & SPS
               </text>
-              <text x={8} y={49} fontSize={6.2} fill="#0f172a">WA Shafts ({waSummary.totalShafts})</text>
-              <text x={218} y={49} textAnchor="end" fontSize={6.1} fontWeight="700" fill="#15803d">
+              <text x={7} y={51} fontSize={7.2} fontWeight="600" fill="#0f172a">WA Shafts ({waSummary.totalShafts})</text>
+              <text x={216} y={51} textAnchor="end" fontSize={7.1} fontWeight="700" fill="#15803d">
                 Done:{waSummary.completedShafts} | Ong:{waSummary.ongoingShafts} | Rem:{waSummary.remainingShafts}
               </text>
-              <text x={8} y={64} fontSize={6.2} fill="#0f172a">WA Manholes</text>
-              <text x={218} y={64} textAnchor="end" fontSize={6.1} fontWeight="700" fill="#1d4ed8">
+              <text x={7} y={66} fontSize={7.2} fontWeight="600" fill="#0f172a">WA Manholes</text>
+              <text x={216} y={66} textAnchor="end" fontSize={7.1} fontWeight="700" fill="#1d4ed8">
                 Both:{waSummary.completedManholes} | Cast:{waSummary.castingCompleteCount} | Ring:{waSummary.precastCompleteCount}
               </text>
-              <text x={8} y={79} fontSize={6.2} fill="#0f172a">WA Tunnel</text>
-              <text x={218} y={79} textAnchor="end" fontSize={6.1} fontWeight="700" fill="#a21caf">
+              <text x={7} y={81} fontSize={7.2} fontWeight="600" fill="#0f172a">WA Tunnel</text>
+              <text x={216} y={81} textAnchor="end" fontSize={7.1} fontWeight="700" fill="#a21caf">
                 {(waSummary.completedTunnelLengthM / 1000).toFixed(3)} / {(waSummary.totalTunnelLengthM / 1000).toFixed(3)} km ({waSummary.tunnelPctOverall.toFixed(1)}%)
               </text>
-              <text x={10} y={93} fontSize={5.6} fill="#334155">
+              <text x={8} y={96} fontSize={6.5} fill="#334155">
                 DN900: {(waSummary.byDia.DN900.completedM / 1000).toFixed(2)}/{(waSummary.byDia.DN900.totalM / 1000).toFixed(2)}km | DN1100: {(waSummary.byDia.DN1100.completedM / 1000).toFixed(2)}/{(waSummary.byDia.DN1100.totalM / 1000).toFixed(2)}km
               </text>
-              <text x={10} y={106} fontSize={5.6} fill="#334155">
+              <text x={8} y={109} fontSize={6.5} fill="#334155">
                 DN1600: {(waSummary.byDia.DN1600.completedM / 1000).toFixed(2)}/{(waSummary.byDia.DN1600.totalM / 1000).toFixed(2)}km
               </text>
 
-              <rect x={7} y={118} width={212} height={104} rx={2.5} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.65} />
-              <text x={13} y={131} fontSize={6.2} fontWeight="700" fill="#166534">GOLAPBAG PUMP STATION (SPS):</text>
-              <text x={13} y={146} fontSize={5.9} fill="#0f172a">
+              <rect x={6} y={119} width={210} height={106} rx={2.5} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.65} />
+              <text x={12} y={134} fontSize={7.3} fontWeight="700" fill="#166534">GOLAPBAG PUMP STATION (SPS):</text>
+              <text x={12} y={151} fontSize={6.8} fill="#0f172a">
                 - Lower: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Layers (Cast: {pumpStation.castingCompleteM}m)
               </text>
-              <text x={13} y={161} fontSize={5.9} fontWeight="700" fill="#0f766e">
+              <text x={12} y={168} fontSize={6.8} fontWeight="700" fill="#0f766e">
                 - Sinking: {pumpStation.sinkingCompletedM}m / {pumpStation.totalHeightM}m [{pumpStation.sinkingStatus.toUpperCase()}]
               </text>
-              <text x={13} y={176} fontSize={5.9} fontWeight="700" fill="#1e3a8a">
+              <text x={12} y={185} fontSize={6.8} fontWeight="700" fill="#1e3a8a">
                 - Upper Room: {pumpStation.machineRoom.status.toUpperCase()}
               </text>
               {viewMode !== 'overall' && (
-                <text x={13} y={199} fontSize={5.9} fontWeight="700" fill="#b45309">
+                <text x={12} y={207} fontSize={6.7} fontWeight="700" fill="#b45309">
                   Delta: +{waSummary.delta.addedLayers}L, +{waSummary.delta.addedTunnelM.toFixed(1)}m WA
                 </text>
               )}
 
               {/* Right Col: WB Open Cut + WC Micro-Tunnelling */}
-              <text x={338} y={33} textAnchor="middle" fontSize={6.6} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+              <text x={332} y={35} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
                 WB (OPEN CUT) & WC (MICRO-TUNNEL)
               </text>
-              <rect x={233} y={42} width={210} height={83} rx={2.5} fill="#eff6ff" stroke="#2563eb" strokeWidth={0.65} />
-              <text x={240} y={55} fontSize={6.2} fontWeight="700" fill="#1e3a8a">WB SECTION ({wbData.method} {wbData.pipeDia}):</text>
-              <text x={240} y={70} fontSize={5.9} fill="#0f172a">
+              <rect x={228} y={43} width={208} height={87} rx={2.5} fill="#eff6ff" stroke="#2563eb" strokeWidth={0.65} />
+              <text x={235} y={57} fontSize={7.2} fontWeight="700" fill="#1e3a8a">WB SECTION ({wbData.method} {wbData.pipeDia}):</text>
+              <text x={235} y={73} fontSize={6.9} fill="#0f172a">
                 Total: {(wbData.totalLengthM / 1000).toFixed(3)} km ({wbData.totalLengthM} m)
               </text>
-              <text x={240} y={84} fontSize={5.9} fontWeight="700" fill="#15803d">
+              <text x={235} y={88} fontSize={6.9} fontWeight="700" fill="#15803d">
                 Done: {(wbData.completedLengthM / 1000).toFixed(3)} km ({wbData.completedLengthM.toFixed(1)} m)
               </text>
-              <text x={240} y={98} fontSize={5.9} fontWeight="700" fill="#dc2626">
+              <text x={235} y={103} fontSize={6.9} fontWeight="700" fill="#dc2626">
                 Rem: {(Math.max(0, wbData.totalLengthM - wbData.completedLengthM) / 1000).toFixed(3)} km
               </text>
-              <text x={240} y={113} fontSize={5.7} fill="#334155">
+              <text x={235} y={119} fontSize={6.6} fill="#334155">
                 Nodes ({wbData.nodes.length}): Done {wbDoneCount} | Ong {wbOngoingCount} | Rem {wbRemCount}
               </text>
 
-              <rect x={233} y={133} width={210} height={89} rx={2.5} fill="#faf5ff" stroke="#9333ea" strokeWidth={0.65} />
-              <text x={240} y={146} fontSize={6.2} fontWeight="700" fill="#6b21a8">WC SECTION (MICRO-TUNNELLING):</text>
-              <text x={240} y={161} fontSize={5.9} fill="#0f172a">
+              <rect x={228} y={136} width={208} height={89} rx={2.5} fill="#faf5ff" stroke="#9333ea" strokeWidth={0.65} />
+              <text x={235} y={150} fontSize={7.2} fontWeight="700" fill="#6b21a8">WC SECTION (MICRO-TUNNELLING):</text>
+              <text x={235} y={166} fontSize={6.8} fill="#0f172a">
                 Shafts ({wcSummary.totalShafts}): Done {wcSummary.completedShafts} | Ong {wcSummary.ongoingShafts} | Rem {wcSummary.remainingShafts}
               </text>
-              <text x={240} y={176} fontSize={5.9} fontWeight="700" fill="#a21caf">
+              <text x={235} y={182} fontSize={6.8} fontWeight="700" fill="#a21caf">
                 Tunnel: {(wcSummary.completedTunnelLengthM / 1000).toFixed(3)} / {(wcSummary.totalTunnelLengthM / 1000).toFixed(3)} km ({wcSummary.tunnelPctOverall.toFixed(1)}%)
               </text>
-              <text x={240} y={191} fontSize={5.7} fill="#334155">
+              <text x={235} y={197} fontSize={6.6} fill="#334155">
                 Manholes: Done {wcSummary.completedManholes} / {wcSummary.totalManholes}
               </text>
-              <text x={240} y={206} fontSize={5.6} fill="#475569">
+              <text x={235} y={213} fontSize={6.6} fill="#475569">
                 Status: {wcSummary.completedTunnelLengthM > 0 || wcSummary.completedShafts > 0 ? 'Active Construction' : 'Not Started (Blank)'}
               </text>
 
-              {renderLegendAndTitle(456, 0, 212, 232, 674, 0, 216, 232, true)}
+              {renderLegendAndTitle(448, 0, 202, 232, 656, 0, 234, 232, true)}
             </g>
           </g>
         );

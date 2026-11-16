@@ -42,6 +42,9 @@ import {
   formatDateDisplay,
   getPumpLowerStatus,
   LIVE_WORKSPACE_ID,
+  normalizePumpStation,
+  normalizeWbData,
+  normalizeWcData,
   resolveDisplayContext,
   sanitizeLoadedState,
 } from './utils/calculations';
@@ -487,12 +490,70 @@ export function App() {
     if (!file) return;
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text) as Partial<AppState>;
-      const restored = sanitizeLoadedState(parsed, createInitialAppState());
-      setState(restored);
-      showToast(
-        isBn ? 'JSON ব্যাকআপ রিস্টোর হয়েছে!' : 'Backup restored successfully!'
-      );
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const fallback = createInitialAppState();
+
+      // Case 1: Full AppState Backup (.json exported from Export -> Save Full Backup)
+      if (Array.isArray(parsed.savedFiles) || parsed.settings) {
+        const restored = sanitizeLoadedState(parsed as Partial<AppState>, fallback);
+        setState(restored);
+        showToast(
+          isBn ? 'সম্পূর্ণ JSON ব্যাকআপ রিস্টোর হয়েছে!' : 'Full JSON backup restored!'
+        );
+        return;
+      }
+
+      // Case 2: Single SavedProgressFile (.json exported from Files Manager -> JSON)
+      if (Array.isArray(parsed.shafts) && parsed.shafts.length > 0) {
+        const rawSf = parsed as Partial<SavedProgressFile>;
+        const nowIso = new Date().toISOString();
+        const normPump = normalizePumpStation(rawSf.pumpStation, fallback.pumpStation);
+        const normWb = normalizeWbData(rawSf.wb, fallback.wb);
+        const normWc = normalizeWcData(rawSf.wc, fallback.wc);
+        const importedName =
+          (typeof rawSf.name === 'string' && rawSf.name.trim()) ||
+          file.name.replace(/\.json$/i, '');
+        const importedDate =
+          (typeof rawSf.date === 'string' && rawSf.date) || state.settings.reportDate;
+
+        const importedFile: SavedProgressFile = {
+          id: `file-imp-${Date.now()}`,
+          name: importedName,
+          date: importedDate,
+          note: typeof rawSf.note === 'string' ? rawSf.note : 'Imported from JSON',
+          createdAt: rawSf.createdAt || nowIso,
+          updatedAt: nowIso,
+          shafts: JSON.parse(JSON.stringify(rawSf.shafts)) as ShaftRecord[],
+          pumpStation: normPump,
+          wb: normWb,
+          wc: normWc,
+        };
+
+        setState((prev) => ({
+          ...prev,
+          lastSavedAt: nowIso,
+          viewMode: 'overall',
+          activeLoadedFileId: importedFile.id,
+          shafts: JSON.parse(JSON.stringify(importedFile.shafts)),
+          pumpStation: JSON.parse(JSON.stringify(importedFile.pumpStation)),
+          wb: JSON.parse(JSON.stringify(importedFile.wb)),
+          wc: JSON.parse(JSON.stringify(importedFile.wc)),
+          settings: {
+            ...prev.settings,
+            reportDate: importedDate || prev.settings.reportDate,
+          },
+          savedFiles: [importedFile, ...prev.savedFiles],
+        }));
+
+        showToast(
+          isBn
+            ? `"${importedName}" JSON ফাইল ইমপোর্ট ও লোড হয়েছে!`
+            : `Imported & loaded "${importedName}" JSON file!`
+        );
+        return;
+      }
+
+      showToast(isBn ? 'সঠিক JSON প্রগ্রেস ফাইল নয়।' : 'Invalid JSON progress file.');
     } catch {
       showToast(isBn ? 'সঠিক JSON ব্যাকআপ ফাইল নয়।' : 'Invalid JSON backup.');
     }
@@ -804,9 +865,9 @@ export function App() {
                       setShowExportMenu(false);
                       jsonInputRef.current?.click();
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-indigo-50 text-indigo-800 font-medium"
                   >
-                    <Upload className="h-4 w-4 text-slate-600" /> Restore Backup (.json)
+                    <Upload className="h-4 w-4 text-indigo-600" /> Import / Restore JSON (.json)
                   </button>
                   <div className="my-1 border-t border-slate-100" />
                   <button
@@ -1382,20 +1443,35 @@ export function App() {
                       ? 'প্রতিটি সেভ করা ফাইলের ভেতর WA, WB ও WC — তিনটি পেজই সংরক্ষিত আছে। যেকোনো ফাইল View, Edit বা 3-Page PDF/Excel ডাউনলোড করতে পারেন।'
                       : 'Each saved file stores all 3 sections (WA + WB + WC) together. View, Edit, or Download 3-Page PDF / Multi-sheet Excel.'}
                   </span>
-                  <button
-                    onClick={() => {
-                      setFilesModalOpen(false);
-                      openSaveFileModal();
-                    }}
-                    className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-bold text-white hover:bg-emerald-700"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    {isBn ? 'বর্তমান অবস্থা সেভ করুন' : 'Save Current Workspace'}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => jsonInputRef.current?.click()}
+                      className="flex items-center gap-1 rounded border border-indigo-300 bg-white px-2.5 py-1 font-bold text-indigo-800 hover:bg-indigo-100"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      {isBn ? 'JSON ইমপোর্ট করুন' : 'Import JSON'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFilesModalOpen(false);
+                        openSaveFileModal();
+                      }}
+                      className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 font-bold text-white hover:bg-emerald-700"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      {isBn ? 'বর্তমান অবস্থা সেভ করুন' : 'Save Current Workspace'}
+                    </button>
+                  </div>
                 </div>
 
                 {state.savedFiles.map((file) => {
-                  const fSum = computeSummary(file.shafts);
+                  const fSum = computeSummary(
+                    file.shafts,
+                    undefined,
+                    file.pumpStation,
+                    undefined,
+                    state.settings.waTunnelDiaTotalsM
+                  );
                   const fWb = file.wb || createInitialWbData();
                   const fWc = file.wc || createInitialWcData();
                   const fWcSum = computeSummary(fWc.shafts);

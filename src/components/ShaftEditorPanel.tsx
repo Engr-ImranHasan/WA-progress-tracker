@@ -1788,10 +1788,10 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-semibold text-slate-600">Checked By</label>
+                <label className="block text-[10px] font-semibold text-slate-600">Contractor Representative</label>
                 <input
                   type="text"
-                  aria-label="Title Block Checked"
+                  aria-label="Title Block Contractor Representative"
                   value={state.settings.checkedBy}
                   onChange={(e) =>
                     onUpdateState((p) => ({
