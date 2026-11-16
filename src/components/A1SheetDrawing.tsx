@@ -1572,23 +1572,112 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     includeMapKey: boolean
   ) => {
     const compact = legW < 280;
-    const fTitle = compact ? 9.1 : 10.2;
-    const fItem = compact ? 7.5 : 8.0;
-    const hdrH = compact ? 22 : 21;
+    const showCompactDelta = compact && viewMode !== 'overall';
+    const actualLegH = showCompactDelta ? 114 : legH;
+    const fTitle = compact ? (showCompactDelta ? 8.6 : 9.1) : 10.2;
+    const fItem = compact ? (showCompactDelta ? 7.1 : 7.5) : 8.0;
+    const hdrH = compact ? (showCompactDelta ? 19 : 22) : 21;
     const rowStep = compact
-      ? includeMapKey
+      ? showCompactDelta
+        ? 15.5
+        : includeMapKey
         ? 28
         : 30
       : includeMapKey
       ? 21
       : 24;
 
+    const fmtMhDelta = (done: number, ong: number) => {
+      if (done > 0 && ong > 0) return `+${done} Done, +${ong} Ong`;
+      if (done > 0) return `+${done} Done`;
+      if (ong > 0) return `+${ong} Ong`;
+      return '';
+    };
+    const wbDeltaM =
+      showCompactDelta && baseline.wbCompletedLengthM !== undefined
+        ? Math.max(0, wbData.completedLengthM - baseline.wbCompletedLengthM)
+        : 0;
+    const deltaRows: Array<{ label: string; value: string; color: string }> = [];
+    if (showCompactDelta) {
+      if (waSummary.delta.addedLayers > 0) {
+        deltaRows.push({
+          label: 'WA Layers',
+          value: `+${waSummary.delta.addedLayers}L`,
+          color: '#15803d',
+        });
+      }
+      if (waSummary.delta.addedTunnelM > 0.05) {
+        deltaRows.push({
+          label: 'WA Tunnel',
+          value: `+${waSummary.delta.addedTunnelM.toFixed(1)} m`,
+          color: '#a21caf',
+        });
+      }
+      const waCast = fmtMhDelta(
+        waSummary.delta.addedCastingCompleted,
+        waSummary.delta.addedCastingOngoing
+      );
+      if (waCast) {
+        deltaRows.push({ label: 'WA MH Cast', value: waCast, color: '#1d4ed8' });
+      }
+      const waRing = fmtMhDelta(
+        waSummary.delta.addedPrecastCompleted,
+        waSummary.delta.addedPrecastOngoing
+      );
+      if (waRing) {
+        deltaRows.push({ label: 'WA MH Ring', value: waRing, color: '#0284c7' });
+      }
+      if (wbDeltaM > 0.05) {
+        deltaRows.push({
+          label: 'WB Open Cut',
+          value: `+${wbDeltaM.toFixed(1)} m`,
+          color: '#2563eb',
+        });
+      }
+      if (wcSummary.delta.addedLayers > 0) {
+        deltaRows.push({
+          label: 'WC Layers',
+          value: `+${wcSummary.delta.addedLayers}L`,
+          color: '#7e22ce',
+        });
+      }
+      if (wcSummary.delta.addedTunnelM > 0.05) {
+        deltaRows.push({
+          label: 'WC Tunnel',
+          value: `+${wcSummary.delta.addedTunnelM.toFixed(1)} m`,
+          color: '#9333ea',
+        });
+      }
+      const wcCast = fmtMhDelta(
+        wcSummary.delta.addedCastingCompleted,
+        wcSummary.delta.addedCastingOngoing
+      );
+      if (wcCast) {
+        deltaRows.push({ label: 'WC MH Cast', value: wcCast, color: '#1d4ed8' });
+      }
+      const wcRing = fmtMhDelta(
+        wcSummary.delta.addedPrecastCompleted,
+        wcSummary.delta.addedPrecastOngoing
+      );
+      if (wcRing) {
+        deltaRows.push({ label: 'WC MH Ring', value: wcRing, color: '#0284c7' });
+      }
+    }
+
+    const deltaY = legY + actualLegH + 4;
+    const deltaH = legH - actualLegH - 4;
+    const deltaHdrH = 18;
+    const dCount = deltaRows.length;
+    const dStep = dCount <= 5 ? 16.5 : Math.min(14.5, 86 / dCount);
+    const dFont = dCount <= 5 ? 7.2 : dCount <= 7 ? 6.7 : 6.1;
+    const dStartY = deltaY + deltaHdrH + (dCount <= 5 ? 14 : 11);
+
     return (
       <g>
         {/* COLOR LEGEND */}
-        <rect x={legX} y={legY} width={legW} height={legH} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+        <rect x={legX} y={legY} width={legW} height={actualLegH} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
         <rect x={legX} y={legY} width={legW} height={hdrH} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
-        <text x={legX + legW / 2} y={legY + (compact ? 14.5 : 14)} textAnchor="middle" fontSize={fTitle} fontWeight="700" fill="#1e3a8a">
+        <text x={legX + legW / 2} y={legY + (showCompactDelta ? 12.8 : compact ? 14.5 : 14)} textAnchor="middle" fontSize={fTitle} fontWeight="700" fill="#1e3a8a">
           COLOR LEGEND ({viewMode.toUpperCase()})
         </text>
 
@@ -1626,19 +1715,19 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               },
             ]
         ).map((item, i) => (
-          <g key={item.label} transform={`translate(${legX + 9}, ${legY + (compact ? 32 : 28) + i * rowStep})`}>
+          <g key={item.label} transform={`translate(${legX + 9}, ${legY + (showCompactDelta ? 24 : compact ? 32 : 28) + i * rowStep})`}>
             <rect
               x={0}
               y={0}
-              width={compact ? 18 : 19}
-              height={compact ? 13 : 12.5}
+              width={showCompactDelta ? 16 : compact ? 18 : 19}
+              height={showCompactDelta ? 10.5 : compact ? 13 : 12.5}
               fill={item.c}
               stroke={item.stroke || '#334155'}
               strokeWidth={0.9}
             />
             <text
-              x={compact ? 25 : 26}
-              y={compact ? 10 : 9.8}
+              x={showCompactDelta ? 22 : compact ? 25 : 26}
+              y={showCompactDelta ? 8.3 : compact ? 10 : 9.8}
               fontSize={fItem}
               fontWeight={'bold' in item && item.bold ? '700' : '600'}
               fill={'bold' in item && item.bold ? '#b45309' : '#0f172a'}
@@ -1648,14 +1737,68 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           </g>
         ))}
 
-        <g transform={`translate(${legX + 10}, ${legY + legH - 10})`}>
-          <circle cx={4} cy={-2.5} r={compact ? 3.4 : 3.0} fill="#16a34a" />
-          <text x={11} y={1} fontSize={compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">Complete</text>
-          <circle cx={compact ? 66 : 70} cy={-2.5} r={compact ? 3.4 : 3.0} fill="#f59e0b" />
-          <text x={compact ? 73 : 77} y={1} fontSize={compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">On-going</text>
-          <circle cx={compact ? 130 : 138} cy={-2.5} r={compact ? 3.4 : 3.0} fill="#dc2626" />
-          <text x={compact ? 137 : 145} y={1} fontSize={compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">Rem.</text>
+        <g transform={`translate(${legX + 10}, ${legY + actualLegH - (showCompactDelta ? 6.5 : 10)})`}>
+          <circle cx={4} cy={-2.5} r={showCompactDelta ? 2.8 : compact ? 3.4 : 3.0} fill="#16a34a" />
+          <text x={10} y={0.5} fontSize={showCompactDelta ? 6.6 : compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">Complete</text>
+          <circle cx={compact ? 66 : 70} cy={-2.5} r={showCompactDelta ? 2.8 : compact ? 3.4 : 3.0} fill="#f59e0b" />
+          <text x={compact ? 72 : 77} y={0.5} fontSize={showCompactDelta ? 6.6 : compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">On-going</text>
+          <circle cx={compact ? 130 : 138} cy={-2.5} r={showCompactDelta ? 2.8 : compact ? 3.4 : 3.0} fill="#dc2626" />
+          <text x={compact ? 136 : 145} y={0.5} fontSize={showCompactDelta ? 6.6 : compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">Rem.</text>
         </g>
+
+        {/* COMPARISON DELTA BOX (ONLY IN COMPARISON MODE) */}
+        {showCompactDelta && (
+          <g>
+            <rect x={legX} y={deltaY} width={legW} height={deltaH} fill="#fffbeb" stroke="#d97706" strokeWidth={1.1} />
+            <rect x={legX} y={deltaY} width={legW} height={deltaHdrH} fill="#fef3c7" stroke="#d97706" strokeWidth={0.8} />
+            <text
+              x={legX + legW / 2}
+              y={deltaY + 12.2}
+              textAnchor="middle"
+              fontSize={8.2}
+              fontWeight="700"
+              fill="#92400e"
+            >
+              {viewMode === 'weekly' ? 'WEEKLY DELTA (NEW)' : 'MONTHLY DELTA (NEW)'}
+            </text>
+            {dCount === 0 ? (
+              <text
+                x={legX + legW / 2}
+                y={deltaY + deltaHdrH + (deltaH - deltaHdrH) / 2 + 3}
+                textAnchor="middle"
+                fontSize={7.2}
+                fontWeight="600"
+                fill="#78350f"
+              >
+                No new progress recorded
+              </text>
+            ) : (
+              deltaRows.map((row, idx) => (
+                <g key={row.label}>
+                  <text
+                    x={legX + 8}
+                    y={dStartY + idx * dStep}
+                    fontSize={dFont}
+                    fontWeight="600"
+                    fill="#334155"
+                  >
+                    {row.label}
+                  </text>
+                  <text
+                    x={legX + legW - 8}
+                    y={dStartY + idx * dStep}
+                    textAnchor="end"
+                    fontSize={dFont}
+                    fontWeight="700"
+                    fill={row.color}
+                  >
+                    {row.value}
+                  </text>
+                </g>
+              ))
+            )}
+          </g>
+        )}
 
         {/* TITLE BLOCK (Click anywhere to edit Title Block fields) */}
         <g
@@ -1670,8 +1813,8 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           }
         >
           <rect x={titleX} y={titleY} width={titleW} height={titleH} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
-          <rect x={titleX} y={titleY} width={titleW} height={hdrH} fill="#1e3a8a" />
-          <text x={titleX + titleW / 2} y={titleY + (compact ? 14.5 : 14)} textAnchor="middle" fontSize={fTitle} fontWeight="700" fill="#ffffff">
+          <rect x={titleX} y={titleY} width={titleW} height={compact ? 22 : hdrH} fill="#1e3a8a" />
+          <text x={titleX + titleW / 2} y={titleY + (compact ? 14.5 : 14)} textAnchor="middle" fontSize={compact ? 9.1 : fTitle} fontWeight="700" fill="#ffffff">
             PROJECT DRAWING TITLE BLOCK
           </text>
           {[
@@ -1684,10 +1827,11 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             ['Dwg No:', `${settings.drawingNo}${settings.revision ? ` (${settings.revision})` : ''}`],
             ['Sheet:', settings.sheetFormatLabel?.trim() || 'ISO A1 (841 x 594 mm)'],
           ].map(([k, v], i) => {
-            const stepY = (titleH - hdrH - 2) / 8;
+            const titleHdrH = compact ? 22 : hdrH;
+            const stepY = (titleH - titleHdrH - 2) / 8;
             const isLongKey = k.startsWith('Contractor Rep');
             return (
-              <g key={k} transform={`translate(${titleX}, ${titleY + hdrH + i * stepY})`}>
+              <g key={k} transform={`translate(${titleX}, ${titleY + titleHdrH + i * stepY})`}>
                 <line x1={0} y1={stepY} x2={titleW} y2={stepY} stroke="#cbd5e1" strokeWidth={0.55} />
                 <text
                   x={5}
@@ -2281,11 +2425,6 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               <text x={12} y={191} fontSize={6.7} fontWeight="700" fill="#1e3a8a">
                 - Upper Room: {pumpStation.machineRoom.status.toUpperCase()}
               </text>
-              {viewMode !== 'overall' && (
-                <text x={12} y={209} fontSize={6.6} fontWeight="700" fill="#b45309">
-                  Delta: +{waSummary.delta.addedLayers}L, +{waSummary.delta.addedTunnelM.toFixed(1)}m WA
-                </text>
-              )}
 
               {/* Right Col: WB Open Cut + WC Micro-Tunnelling */}
               <text x={332} y={35} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#1e3a8a" textDecoration="underline">

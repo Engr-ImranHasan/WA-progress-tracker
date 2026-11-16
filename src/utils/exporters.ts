@@ -324,6 +324,8 @@ function buildWorkbookFromData(
           { Section: 'Compare', Category: 'Comparison', Metric: 'File 2 (Current/Final)', Value: compareInfo.file2Label, Unit: '' },
           { Section: 'Compare', Category: 'WA Delta', Metric: 'Added Shaft Layers', Value: waSummary.delta.addedLayers, Unit: 'Layers' },
           { Section: 'Compare', Category: 'WA Delta', Metric: 'Added Tunnel Length', Value: Number(waSummary.delta.addedTunnelM.toFixed(2)), Unit: 'm' },
+          { Section: 'Compare', Category: 'WA Delta', Metric: 'MH Cast (New Complete / On-going)', Value: `${waSummary.delta.addedCastingCompleted} / ${waSummary.delta.addedCastingOngoing}`, Unit: 'Nos' },
+          { Section: 'Compare', Category: 'WA Delta', Metric: 'MH Ring (New Complete / On-going)', Value: `${waSummary.delta.addedPrecastCompleted} / ${waSummary.delta.addedPrecastOngoing}`, Unit: 'Nos' },
           {
             Section: 'Compare',
             Category: 'WB Delta',

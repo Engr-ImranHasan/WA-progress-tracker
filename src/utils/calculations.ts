@@ -222,7 +222,9 @@ export interface ProgressSummary {
     addedLayers: number;
     addedShaftsCompleted: number;
     addedCastingCompleted: number;
+    addedCastingOngoing: number;
     addedPrecastCompleted: number;
+    addedPrecastOngoing: number;
     addedTunnelM: number;
     addedPumpLayers: number;
   };
@@ -264,7 +266,9 @@ export function computeSummary(
   let addedLayers = 0;
   let addedShaftsCompleted = 0;
   let addedCastingCompleted = 0;
+  let addedCastingOngoing = 0;
   let addedPrecastCompleted = 0;
+  let addedPrecastOngoing = 0;
   let addedTunnelM = 0;
   let addedPumpLayers = 0;
 
@@ -310,7 +314,9 @@ export function computeSummary(
           addedShaftsCompleted++;
         }
         if (s.castingPct >= 100 && b.castingPct < 100) addedCastingCompleted++;
+        else if (s.castingPct > b.castingPct && s.castingPct < 100) addedCastingOngoing++;
         if (s.precastPct >= 100 && b.precastPct < 100) addedPrecastCompleted++;
+        else if (s.precastPct > b.precastPct && s.precastPct < 100) addedPrecastOngoing++;
         addedTunnelM += Math.max(
           0,
           (s.tunnelLengthM * (s.tunnelPct - b.tunnelPct)) / 100
@@ -367,7 +373,9 @@ export function computeSummary(
       addedLayers,
       addedShaftsCompleted,
       addedCastingCompleted,
+      addedCastingOngoing,
       addedPrecastCompleted,
+      addedPrecastOngoing,
       addedTunnelM,
       addedPumpLayers,
     },
