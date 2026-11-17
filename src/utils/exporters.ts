@@ -30,6 +30,8 @@ import {
 import {
   createInitialWbData,
   createInitialWcData,
+  DEFAULT_AIR_VALVE_COORD,
+  DEFAULT_WASHOUT_COORD,
   GOLAPBAG_SPS_COORD,
   INITIAL_WA_GEO_NODES,
 } from './../data/wbcInitialData';
@@ -80,7 +82,19 @@ export async function preloadSectionMapSnapshots(state: AppState): Promise<void>
     1558,
     0.09
   );
-  const wbFullA1Vp = buildGeoViewport(state.wb.nodes, 44, 86, 1100, 1558, 0.09);
+  const wbFullA1Vp = buildGeoViewport(
+    [
+      ...state.wb.nodes,
+      state.wb.washoutCoord || DEFAULT_WASHOUT_COORD,
+      state.wb.airValveCoord || DEFAULT_AIR_VALVE_COORD,
+      spsCoord,
+    ],
+    44,
+    86,
+    1100,
+    1558,
+    0.09
+  );
   const wcFullA1Vp = buildGeoViewport(state.wc.geoNodes, 44, 86, 1100, 1558, 0.09);
 
   const wbFullW = Math.min(1100, Math.max(480, Math.round(942 * 1.35)));

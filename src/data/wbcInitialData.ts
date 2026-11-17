@@ -43,7 +43,7 @@ export const RAW_WA_COORDS: Array<[string, number, number]> = [
 export const INITIAL_WA_GEO_NODES: Array<{ id: string; lat: number; lon: number }> =
   RAW_WA_COORDS.map(([id, lat, lon]) => ({ id, lat, lon }));
 
-export const GOLAPBAG_SPS_COORD = { lat: 23.7195161, lon: 90.4326567 };
+export const GOLAPBAG_SPS_COORD = { lat: 23.72032, lon: 90.43282 };
 export const DEFAULT_WASHOUT_COORD = { lat: 23.7174873, lon: 90.43072 };
 export const DEFAULT_AIR_VALVE_COORD = { lat: 23.71053, lon: 90.4245374 };
 

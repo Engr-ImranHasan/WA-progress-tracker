@@ -820,7 +820,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
     if (kind === 'wb-map') {
       const wash = wbData.washoutCoord || DEFAULT_WASHOUT_COORD;
       const airV = wbData.airValveCoord || DEFAULT_AIR_VALVE_COORD;
-      const basePts = [...wbData.nodes, wash, airV];
+      const basePts = [...wbData.nodes, wash, airV, spsCoord];
       return buildGeoViewport(
         [...basePts, ...filterNearby(wbData.customPoints || [], wbData.nodes)],
         mapX,
@@ -881,10 +881,10 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
 
   const sheetNoLabel =
     kind === 'wa-map'
-      ? 'Sheet 2 of 5 (A1 Portrait)'
+      ? 'Sheet 2 of 5'
       : kind === 'wb-map'
-      ? 'Sheet 3 of 5 (A1 Portrait)'
-      : 'Sheet 4 of 5 (A1 Portrait)';
+      ? 'Sheet 3 of 5'
+      : 'Sheet 4 of 5';
 
   const periodText =
     viewMode === 'weekly'
@@ -947,35 +947,32 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
         Section
       </text>
 
-      <text x={136} y={37} fontSize={9.2} fontWeight="800" fill={sectionAccent}>
+      <text x={138} y={46} fontSize={11.5} fontWeight="800" fill={sectionAccent}>
         {sheetNoLabel}
       </text>
-      <text x={136} y={52} fontSize={7.8} fontWeight="600" fill="#475569">
-        {settings.drawingNo} ({settings.revision})
-      </text>
 
-      <text x={516} y={37} textAnchor="middle" fontSize={14.6} fontWeight="800" fill="#0f172a">
+      <text x={548} y={37} textAnchor="middle" fontSize={14.0} fontWeight="800" fill="#0f172a">
         {mapTitle}
       </text>
-      <text x={516} y={55} textAnchor="middle" fontSize={9.0} fontWeight="600" fill="#334155">
+      <text x={548} y={54} textAnchor="middle" fontSize={8.8} fontWeight="600" fill="#334155">
         Dhaka Sanitation Improvement Project (DSIP) | Package WD-02 — As of {formatDateDisplay(settings.reportDate)}
       </text>
 
       <rect
-        x={SHEET_W - 418}
+        x={SHEET_W - 298}
         y={22}
-        width={390}
+        width={276}
         height={40}
         rx={4}
         fill={viewMode === 'weekly' ? '#fffbeb' : viewMode === 'monthly' ? '#ecfeff' : '#f0fdf4'}
         stroke={viewMode === 'weekly' ? '#d97706' : viewMode === 'monthly' ? '#0891b2' : '#16a34a'}
         strokeWidth={1.0}
       />
-      <text x={SHEET_W - 223} y={39} textAnchor="middle" fontSize={7.1} fontWeight="700" fill="#0f172a">
-        {trunc(periodText, 68)}
+      <text x={SHEET_W - 160} y={38} textAnchor="middle" fontSize={7.2} fontWeight="800" fill="#0f172a">
+        {trunc(periodText, 44)}
       </text>
-      <text x={SHEET_W - 223} y={53} textAnchor="middle" fontSize={6.7} fontWeight="600" fill="#475569">
-        Client: {settings.clientName} | {settings.contractorName}
+      <text x={SHEET_W - 160} y={52} textAnchor="middle" fontSize={6.5} fontWeight="600" fill="#475569">
+        {trunc(`Client: ${settings.clientName} | ${settings.contractorName}`, 48)}
       </text>
 
       {/* Geographic Neatline & Lat/Lon Graticule Ticks */}
@@ -1018,22 +1015,42 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
 
           const occupied: RectBox[] = [legendBox, compassBox, scaleBox];
           const geoById = new Map(waGeoNodes.map((g) => [g.id, g]));
-          const spsPt = viewport.project(spsCoord.lat, spsCoord.lon);
+          const wa35Geo = geoById.get('WA-35');
+          const wa36Geo = geoById.get('WA-36');
+          const wa35Pt = wa35Geo ? viewport.project(wa35Geo.lat, wa35Geo.lon) : null;
+          const wa36Pt = wa36Geo ? viewport.project(wa36Geo.lat, wa36Geo.lon) : null;
+          const rawSpsPt = viewport.project(spsCoord.lat, spsCoord.lon);
+          const spsPt =
+            wa36Pt && Math.hypot(rawSpsPt.x - wa36Pt.x, rawSpsPt.y - wa36Pt.y) < 26
+              ? { x: wa36Pt.x + 2, y: wa36Pt.y - 32 }
+              : rawSpsPt;
 
-          // Pre-seed WA square markers + SPS marker + custom points
+          // Pre-seed WA square markers + SPS marker + WA-35->WA-36->SPS pipe corridor + custom points
           for (const gNode of waGeoNodes) {
             const p = viewport.project(gNode.lat, gNode.lon);
             occupied.push({ x0: p.x - 10, y0: p.y - 10, x1: p.x + 10, y1: p.y + 10 });
+          }
+          if (wa35Pt && wa36Pt) {
+            for (const t of [0.35, 0.65]) {
+              const mx = wa35Pt.x + (wa36Pt.x - wa35Pt.x) * t;
+              const my = wa35Pt.y + (wa36Pt.y - wa35Pt.y) * t;
+              occupied.push({ x0: mx - 6, y0: my - 6, x1: mx + 6, y1: my + 6 });
+            }
+          }
+          if (wa36Pt) {
+            const mx = (wa36Pt.x + spsPt.x) / 2;
+            const my = (wa36Pt.y + spsPt.y) / 2;
+            occupied.push({ x0: mx - 6, y0: my - 6, x1: mx + 6, y1: my + 6 });
           }
           for (const cp of waCustomPoints) {
             const p = viewport.project(cp.lat, cp.lon);
             occupied.push({ x0: p.x - 11, y0: p.y - 11, x1: p.x + 11, y1: p.y + 11 });
           }
           occupied.push({
-            x0: spsPt.x - 16,
-            y0: spsPt.y - 16,
-            x1: spsPt.x + 16,
-            y1: spsPt.y + 16,
+            x0: spsPt.x - 18,
+            y0: spsPt.y - 12,
+            x1: spsPt.x + 18,
+            y1: spsPt.y + 12,
           });
 
           const zonePtDncc = viewport.project(23.7545, 90.4150);
@@ -1042,12 +1059,12 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
           const waLandmarks: Array<{
             nodeId: string;
             label: string;
-            side: 'left' | 'right';
+            side: 'left' | 'right' | 'top' | 'bottom';
             dx: number;
             dy: number;
             stopDist: number;
           }> = [
-            { nodeId: 'WA-1', label: 'Mirbag (Start WA-01)', side: 'left', dx: -215, dy: 46, stopDist: 10 },
+            { nodeId: 'WA-1', label: 'Mirbag (Start WA-01)', side: 'top', dx: -40, dy: -66, stopDist: 10 },
             { nodeId: 'WA-12', label: 'Moulovirtek (Rampura)', side: 'left', dx: -275, dy: 34, stopDist: 34 },
             { nodeId: 'WA-14', label: 'Sipahibag Moor', side: 'right', dx: 92, dy: -22, stopDist: 34 },
             { nodeId: 'WA-18', label: 'Goran Tempo Stand', side: 'left', dx: -250, dy: -4, stopDist: 34 },
@@ -1067,11 +1084,10 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
               {/* Micro-tunneling segments WA-i -> WA-(i+1) & WA-36 -> SPS */}
               {waGeoNodes.map((gNode, idx) => {
                 const p1 = viewport.project(gNode.lat, gNode.lon);
-                const nextGeo =
+                const p2 =
                   idx < waGeoNodes.length - 1
-                    ? waGeoNodes[idx + 1]
-                    : spsCoord;
-                const p2 = viewport.project(nextGeo.lat, nextGeo.lon);
+                    ? viewport.project(waGeoNodes[idx + 1].lat, waGeoNodes[idx + 1].lon)
+                    : spsPt;
                 const sh = shaftById.get(gNode.id);
                 const mtStatus = sh ? getTunnelStatus(sh) : 'remaining';
                 const col = statusStroke(mtStatus);
@@ -1117,33 +1133,33 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                 });
               })}
 
-              {/* Prominent Highlighted Golapbag SPS Callout */}
+              {/* Prominent Highlighted Golapbag SPS Callout (positioned cleanly right of SPS above WA-36) */}
               {renderHighlightedCallout(spsPt.x, spsPt.y, 'Golapbag Pump Station (SPS)', occupied, mapBounds, {
                 key: 'wa-sps-callout',
-                preferredSide: 'left',
-                baseOffsetX: -315,
-                baseOffsetY: 42,
-                fontSize: 15.5,
-                stopDist: 16,
+                preferredSide: 'right',
+                baseOffsetX: 38,
+                baseOffsetY: -18,
+                fontSize: 14.8,
+                stopDist: 20,
                 bgFill: '#fdf2f8',
                 borderStroke: '#9d174d',
                 textFill: '#831843',
                 arrowStroke: '#9d174d',
               })}
 
-              {/* Golapbag SPS Building Box Marker */}
+              {/* Golapbag SPS Building Box Marker (clearly above WA-36) */}
               <g>
                 <rect
-                  x={spsPt.x - 14}
-                  y={spsPt.y - 14}
-                  width={28}
-                  height={28}
+                  x={spsPt.x - 17}
+                  y={spsPt.y - 10}
+                  width={34}
+                  height={20}
                   rx={3}
                   fill="#fbcfe8"
                   stroke="#9d174d"
                   strokeWidth={2.4}
                 />
-                <text x={spsPt.x} y={spsPt.y + 3.5} textAnchor="middle" fontSize={8.2} fontWeight="800" fill="#831843">
+                <text x={spsPt.x} y={spsPt.y + 3.5} textAnchor="middle" fontSize={9.0} fontWeight="900" fill="#831843">
                   SPS
                 </text>
               </g>
@@ -1171,8 +1187,14 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   : { hasNewLayer: false, hasNewMh: false, hasNewTunnel: false };
 
                 const lmMatch = waLandmarks.find((l) => l.nodeId === gNode.id);
-                const prefSide: 'left' | 'right' | 'top' =
-                  lmMatch
+                const prefSide: 'left' | 'right' | 'top' | 'bottom' =
+                  gNode.id === 'WA-1'
+                    ? 'left'
+                    : gNode.id === 'WA-35'
+                    ? 'bottom'
+                    : gNode.id === 'WA-36'
+                    ? 'right'
+                    : lmMatch
                     ? lmMatch.side === 'right'
                       ? 'left'
                       : 'right'
@@ -1418,6 +1440,14 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
           const spsPt = viewport.project(spsCoord.lat, spsCoord.lon);
           const wbById = new Map(wbData.nodes.map((n) => [n.id, n]));
 
+          const wb1Node = wbById.get('WB1');
+          const wb1Pt = wb1Node ? viewport.project(wb1Node.lat, wb1Node.lon) : null;
+          const wbSpsRawPt = viewport.project(spsCoord.lat, spsCoord.lon);
+          const wbSpsY =
+            wb1Pt && Math.hypot(wbSpsRawPt.x - wb1Pt.x, wbSpsRawPt.y - wb1Pt.y) < 26
+              ? wb1Pt.y - 38
+              : wbSpsRawPt.y - 11;
+
           for (const nd of wbData.nodes) {
             const p = viewport.project(nd.lat, nd.lon);
             occupied.push({ x0: p.x - 9, y0: p.y - 9, x1: p.x + 9, y1: p.y + 9 });
@@ -1427,10 +1457,10 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
             occupied.push({ x0: p.x - 11, y0: p.y - 11, x1: p.x + 11, y1: p.y + 11 });
           }
           occupied.push({
-            x0: spsPt.x - 18,
-            y0: spsPt.y - 42,
-            x1: spsPt.x + 36,
-            y1: spsPt.y - 14,
+            x0: wbSpsRawPt.x - 24,
+            y0: wbSpsY - 2,
+            x1: wbSpsRawPt.x + 28,
+            y1: wbSpsY + 24,
           });
           occupied.push({
             x0: tipPt.x + 20,
@@ -1529,8 +1559,8 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
               {/* Golapbag SPS Pink Box */}
               <g>
                 <rect
-                  x={spsPt.x - 16}
-                  y={spsPt.y - 38}
+                  x={wbSpsRawPt.x - 22}
+                  y={wbSpsY}
                   width={48}
                   height={22}
                   rx={3}
@@ -1538,7 +1568,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   stroke="#9d174d"
                   strokeWidth={2.2}
                 />
-                <text x={spsPt.x + 8} y={spsPt.y - 23} textAnchor="middle" fontSize={9.0} fontWeight="800" fill="#831843">
+                <text x={wbSpsRawPt.x + 2} y={wbSpsY + 14.5} textAnchor="middle" fontSize={9.0} fontWeight="800" fill="#831843">
                   SPS
                 </text>
               </g>

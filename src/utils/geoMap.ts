@@ -269,7 +269,7 @@ export function getTileCacheKey(
   outW: number,
   outH: number
 ): string {
-  return `${style}|${viewport.minX.toFixed(6)}|${viewport.maxX.toFixed(6)}|${viewport.minY.toFixed(6)}|${viewport.maxY.toFixed(6)}|${outW}x${outH}`;
+  return `v16|${style}|${viewport.minX.toFixed(6)}|${viewport.maxX.toFixed(6)}|${viewport.minY.toFixed(6)}|${viewport.maxY.toFixed(6)}|${outW}x${outH}`;
 }
 
 export async function ensureMapTileSnapshot(
@@ -362,8 +362,51 @@ export async function ensureMapTileSnapshot(
 
       await Promise.all(jobs);
       if (loadedAny) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-        ctx.fillRect(0, 0, outW, outH);
+        // Apply crisp professional cool-neutral cartographic grading on Esri World_Street_Map
+        // so yellow/orange/red basemap tints never overpower colored pipeline overlays.
+        if (style === 'voyager') {
+          try {
+            const imgData = ctx.getImageData(0, 0, outW, outH);
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+              const r = d[i];
+              const g = d[i + 1];
+              const b = d[i + 2];
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              const isWater = b - r > 12 && b > 140;
+              const isLabelOrOutline = lum < 135;
+              if (isWater) {
+                d[i] = Math.round(lum * 0.7 + 210 * 0.3);
+                d[i + 1] = Math.round(lum * 0.7 + 228 * 0.3);
+                d[i + 2] = Math.round(lum * 0.64 + 246 * 0.36);
+              } else if (isLabelOrOutline) {
+                const nr = Math.round(lum * 0.88 + r * 0.12);
+                d[i] = nr;
+                d[i + 1] = nr;
+                d[i + 2] = Math.min(255, nr + 4);
+              } else {
+                const sat = 0.14;
+                let nr = lum + (r - lum) * sat;
+                let ng = lum + (g - lum) * sat;
+                let nb = lum + (b - lum) * sat;
+                nr = 255 - (255 - nr) * 0.66;
+                ng = 255 - (255 - ng) * 0.65;
+                nb = Math.min(255, 255 - (255 - nb) * 0.62 + 2);
+                d[i] = Math.round(nr);
+                d[i + 1] = Math.round(ng);
+                d[i + 2] = Math.round(nb);
+              }
+            }
+            ctx.putImageData(imgData, 0, 0);
+          } catch {
+            // Fallback subtle light wash if pixel read is restricted
+            ctx.fillStyle = 'rgba(248, 250, 252, 0.35)';
+            ctx.fillRect(0, 0, outW, outH);
+          }
+        } else {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+          ctx.fillRect(0, 0, outW, outH);
+        }
         const url = canvas.toDataURL('image/png');
         tileCache.set(key, url);
         return url;

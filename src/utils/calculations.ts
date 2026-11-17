@@ -634,9 +634,18 @@ export function sanitizeLoadedState(
     Array.isArray(parsed.waGeoNodes) && parsed.waGeoNodes.length > 0
       ? parsed.waGeoNodes
       : INITIAL_WA_GEO_NODES.map((n) => ({ ...n }));
-  const spsCoord = parsed.spsCoord
-    ? { lat: Number(parsed.spsCoord.lat), lon: Number(parsed.spsCoord.lon) }
-    : { ...GOLAPBAG_SPS_COORD };
+  const migrateLegacySps = (c?: { lat: number; lon: number }) => {
+    if (!c || !Number.isFinite(Number(c.lat)) || !Number.isFinite(Number(c.lon))) {
+      return { ...GOLAPBAG_SPS_COORD };
+    }
+    const lat = Number(c.lat);
+    const lon = Number(c.lon);
+    if (Math.abs(lat - 23.7195161) < 1e-6 && Math.abs(lon - 90.4326567) < 1e-6) {
+      return { ...GOLAPBAG_SPS_COORD };
+    }
+    return { lat, lon };
+  };
+  const spsCoord = migrateLegacySps(parsed.spsCoord);
   const waCustomPoints = Array.isArray(parsed.waCustomPoints)
     ? parsed.waCustomPoints
     : [];
@@ -653,9 +662,7 @@ export function sanitizeLoadedState(
             Array.isArray(f.waGeoNodes) && f.waGeoNodes.length > 0
               ? f.waGeoNodes
               : INITIAL_WA_GEO_NODES.map((n) => ({ ...n })),
-          spsCoord: f.spsCoord
-            ? { lat: Number(f.spsCoord.lat), lon: Number(f.spsCoord.lon) }
-            : { ...GOLAPBAG_SPS_COORD },
+          spsCoord: migrateLegacySps(f.spsCoord),
           waCustomPoints: Array.isArray(f.waCustomPoints) ? f.waCustomPoints : [],
         }))
       : fallback.savedFiles;
