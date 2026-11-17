@@ -224,8 +224,40 @@ export function computeWbPolylineSplit(
   };
 }
 
+export function formatDms(deg: number, posHem: string, negHem: string): string {
+  const hem = deg >= 0 ? posHem : negHem;
+  const abs = Math.abs(deg);
+  const d = Math.floor(abs);
+  const remM = (abs - d) * 60;
+  const m = Math.floor(remM);
+  const s = Math.round((remM - m) * 60);
+  if (s === 60) {
+    return `${d}°${m + 1}'0"${hem}`;
+  }
+  return `${d}°${m}'${s}"${hem}`;
+}
+
+export function xToLon(xNorm: number): number {
+  return xNorm * 360 - 180;
+}
+
+export function yToLat(yNorm: number): number {
+  const n = Math.PI - 2 * Math.PI * yNorm;
+  return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+
+export function computeMetersPerSvgUnit(vp: ProjectedViewport): number {
+  const midLat = yToLat((vp.minY + vp.maxY) / 2);
+  const earthCircumference = 40075016.686;
+  const spanMeters =
+    earthCircumference *
+    Math.cos((midLat * Math.PI) / 180) *
+    Math.max(1e-8, vp.maxX - vp.minX);
+  return spanMeters / Math.max(1, vp.boxW);
+}
+
 /**
- * Fetches CORS-safe CartoDB navigation street tiles covering `viewport`
+ * Fetches CORS-safe Esri navigation street tiles covering `viewport`
  * and bakes them into an inline PNG data URI for crisp SVG + A1 PDF output.
  */
 const tileCache = new Map<string, string>();
@@ -265,7 +297,7 @@ export async function ensureMapTileSnapshot(
       const tyMin = Math.floor((viewport.minY * worldPx) / 256);
       const tyMax = Math.floor((viewport.maxY * worldPx) / 256);
 
-      if ((txMax - txMin + 1) * (tyMax - tyMin + 1) > 42) {
+      if ((txMax - txMin + 1) * (tyMax - tyMin + 1) > 64) {
         z = Math.max(12, z - 1);
       }
 
@@ -330,7 +362,7 @@ export async function ensureMapTileSnapshot(
 
       await Promise.all(jobs);
       if (loadedAny) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
         ctx.fillRect(0, 0, outW, outH);
         const url = canvas.toDataURL('image/png');
         tileCache.set(key, url);

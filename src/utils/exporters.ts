@@ -27,7 +27,12 @@ import {
   resizeShaftLayers,
   resolveDisplayContext,
 } from './calculations';
-import { createInitialWbData, createInitialWcData } from '../data/wbcInitialData';
+import {
+  createInitialWbData,
+  createInitialWcData,
+  GOLAPBAG_SPS_COORD,
+  INITIAL_WA_GEO_NODES,
+} from './../data/wbcInitialData';
 import { buildGeoViewport, ensureMapTileSnapshot } from './geoMap';
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -61,6 +66,18 @@ export async function preloadSectionMapSnapshots(state: AppState): Promise<void>
   // Combined side-by-side WC map: x=1296, y=704, w=368, h=464 -> mapX=1300, mapY=723, mapW=360, mapH=441
   const wcCompactVp = buildGeoViewport(state.wc.geoNodes, 1300, 723, 360, 441, 0.12);
 
+  // Full-A1 GIS Map Pages (Pages 2, 3, 4 in 5-Page PDF: x=50, y=74, w=1582, h=1076, padRatio=0.085, 1600x1088)
+  const waFullA1Vp = buildGeoViewport(
+    [...INITIAL_WA_GEO_NODES, GOLAPBAG_SPS_COORD],
+    50,
+    74,
+    1582,
+    1076,
+    0.085
+  );
+  const wbFullA1Vp = buildGeoViewport(state.wb.nodes, 50, 74, 1582, 1076, 0.085);
+  const wcFullA1Vp = buildGeoViewport(state.wc.geoNodes, 50, 74, 1582, 1076, 0.085);
+
   const wbFullW = Math.min(1100, Math.max(480, Math.round(942 * 1.35)));
   const wbFullH = Math.min(1100, Math.max(420, Math.round(896 * 1.35)));
   const compactW = Math.min(1100, Math.max(480, Math.round(360 * 1.55)));
@@ -73,6 +90,9 @@ export async function preloadSectionMapSnapshots(state: AppState): Promise<void>
     ensureMapTileSnapshot(wbCompactVp, state.settings.mapStyle, compactW, compactH),
     ensureMapTileSnapshot(wcFullVp, state.settings.mapStyle, wcFullW, wcFullH),
     ensureMapTileSnapshot(wcCompactVp, state.settings.mapStyle, compactW, compactH),
+    ensureMapTileSnapshot(waFullA1Vp, state.settings.mapStyle, 1600, 1088),
+    ensureMapTileSnapshot(wbFullA1Vp, state.settings.mapStyle, 1600, 1088),
+    ensureMapTileSnapshot(wcFullA1Vp, state.settings.mapStyle, 1600, 1088),
   ]);
 }
 

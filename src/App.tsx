@@ -29,12 +29,21 @@ import {
 } from 'lucide-react';
 import {
   AppState,
+  PdfSheetKey,
   SavedProgressFile,
   SectionTab,
   ShaftRecord,
   ViewMode,
   WbSectionData,
 } from './types';
+
+const FIVE_PAGE_PDF_SECTIONS: PdfSheetKey[] = [
+  'combined',
+  'wa-map',
+  'wb-map',
+  'wc-map',
+  'wc-status',
+];
 import { createInitialAppState } from './data/initialWaData';
 import { createInitialWbData, createInitialWcData } from './data/wbcInitialData';
 import {
@@ -106,10 +115,10 @@ export function App() {
   const [previewFile, setPreviewFile] = useState<SavedProgressFile | null>(null);
   const [previewTab, setPreviewTab] = useState<SectionTab>('combined');
 
-  // Offscreen hidden state for multi-page A1 Vector PDF (WA + WB + WC)
+  // Offscreen hidden state for multi-page A1 Vector PDF (5-Page Report / Legacy multi-page)
   const [multiPdfReq, setMultiPdfReq] = useState<{
     sourceState: AppState;
-    sections: SectionTab[];
+    sections: PdfSheetKey[];
     filename: string;
   } | null>(null);
   const multiSvgRefs = useRef<Record<string, SVGSVGElement | null>>({});
@@ -141,8 +150,10 @@ export function App() {
     const run = async () => {
       try {
         await preloadSectionMapSnapshots(multiPdfReq.sourceState);
-        // Wait 2 animation frames so React renders cached map snapshots into SVGs
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        // Wait 2 animation frames + micro-settle so all <image> hrefs paint in DOM
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 80)))
+        );
         if (cancelled) return;
 
         const els: SVGSVGElement[] = [];
@@ -154,7 +165,7 @@ export function App() {
           await exportMultiPageA1VectorPdf(els, multiPdfReq.filename);
           showToast(
             isBn
-              ? `${els.length} পৃষ্ঠার A1 Vector PDF (WA+WB+WC) ডাউনলোড হয়েছে!`
+              ? `${els.length} পৃষ্ঠার A1 Vector PDF ডাউনলোড হয়েছে!`
               : `Exported ${els.length}-Page A1 Vector PDF!`
           );
         }
@@ -385,8 +396,8 @@ export function App() {
     showToast(isBn ? 'ফাইলটি মুছে ফেলা হয়েছে।' : 'File deleted.');
   };
 
-  const startMultiPagePdfExport = (
-    sections: SectionTab[],
+  const startMultiPagePdfExport = async (
+    sections: PdfSheetKey[],
     sourceState: AppState = state,
     customTag?: string
   ) => {
@@ -395,11 +406,18 @@ export function App() {
     setExportBusy(
       isBn ? `${sections.length} পৃষ্ঠার A1 PDF তৈরি হচ্ছে...` : `Building ${sections.length}-Page A1 PDF...`
     );
-    setMultiPdfReq({
-      sourceState,
-      sections,
-      filename: `WABC-Progress-${sections.length}Pages-A1-${dateTag}.pdf`,
-    });
+    try {
+      await preloadSectionMapSnapshots(sourceState);
+      setMultiPdfReq({
+        sourceState,
+        sections,
+        filename: `WABC-Progress-${sections.length}Pages-A1-${dateTag}.pdf`,
+      });
+    } catch (err) {
+      console.error(err);
+      setExportBusy('');
+      showToast(isBn ? 'মাল্টি-পেজ PDF তৈরিতে সমস্যা হয়েছে।' : 'Multi-page PDF failed.');
+    }
   };
 
   const handleExport = async (
@@ -762,15 +780,15 @@ export function App() {
             {exportBusy ? exportBusy : 'A1 PDF'}
           </button>
 
-          {/* 3-Page A1 PDF (WA + WB + WC) */}
+          {/* 5-Page A1 PDF (Combined -> WA Map -> WB Map -> WC Map -> WC Status) */}
           <button
-            onClick={() => startMultiPagePdfExport(['wa', 'wb', 'wc'])}
+            onClick={() => startMultiPagePdfExport(FIVE_PAGE_PDF_SECTIONS)}
             disabled={Boolean(exportBusy)}
             className="hidden sm:flex items-center gap-1 rounded-md border border-blue-400/60 bg-blue-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition disabled:opacity-50"
-            title="Export all 3 pages (WA + WB + WC) into one A1 Vector PDF"
+            title="Export 5-Page A1 Vector PDF (Combined, WA Map, WB Map, WC Map, WC Status)"
           >
             <Files className="h-3.5 w-3.5" />
-            3-Page PDF
+            5-Page PDF
           </button>
 
           {/* Export / Import Menu */}
@@ -800,10 +818,10 @@ export function App() {
                     <FileText className="h-4 w-4" /> Current A1 Sheet PDF (841×594mm)
                   </button>
                   <button
-                    onClick={() => startMultiPagePdfExport(['wa', 'wb', 'wc'])}
+                    onClick={() => startMultiPagePdfExport(FIVE_PAGE_PDF_SECTIONS)}
                     className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-indigo-50 font-semibold text-indigo-700"
                   >
-                    <Files className="h-4 w-4" /> 3-Page A1 PDF (WA + WB + WC)
+                    <Files className="h-4 w-4" /> 5-Page A1 PDF (Comb+Maps+WC)
                   </button>
                   <button
                     onClick={() => startMultiPagePdfExport(['wa', 'wb', 'wc', 'combined'])}
@@ -1194,7 +1212,7 @@ export function App() {
         )}
       </div>
 
-      {/* ==================== OFFSCREEN MULTI-PAGE A1 RENDERER FOR 3-PAGE PDF ==================== */}
+      {/* ==================== OFFSCREEN MULTI-PAGE A1 RENDERER FOR 5-PAGE PDF ==================== */}
       {multiPdfReq && (
         <div
           aria-hidden="true"
@@ -1378,14 +1396,14 @@ export function App() {
                     <button
                       onClick={() =>
                         startMultiPagePdfExport(
-                          ['wa', 'wb', 'wc'],
+                          FIVE_PAGE_PDF_SECTIONS,
                           previewState,
                           `${previewFile.date}-${previewFile.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}`
                         )
                       }
                       className="flex items-center gap-1 rounded bg-blue-700 px-2.5 py-1 font-bold text-white hover:bg-blue-800"
                     >
-                      <Files className="h-3.5 w-3.5" /> 3-Page PDF
+                      <Files className="h-3.5 w-3.5" /> 5-Page PDF
                     </button>
                     <button
                       onClick={() =>
@@ -1441,8 +1459,8 @@ export function App() {
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
                   <span>
                     {isBn
-                      ? 'প্রতিটি সেভ করা ফাইলের ভেতর WA, WB ও WC — তিনটি পেজই সংরক্ষিত আছে। যেকোনো ফাইল View, Edit বা 3-Page PDF/Excel ডাউনলোড করতে পারেন।'
-                      : 'Each saved file stores all 3 sections (WA + WB + WC) together. View, Edit, or Download 3-Page PDF / Multi-sheet Excel.'}
+                      ? 'প্রতিটি সেভ করা ফাইলের ভেতর WA, WB ও WC — তিনটি পেজই সংরক্ষিত আছে। যেকোনো ফাইল View, Edit বা 5-Page PDF/Excel ডাউনলোড করতে পারেন।'
+                      : 'Each saved file stores all 3 sections (WA + WB + WC) together. View, Edit, or Download 5-Page PDF / Multi-sheet Excel.'}
                   </span>
                   <div className="flex flex-wrap items-center gap-2">
                     <button

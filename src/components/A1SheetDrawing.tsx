@@ -1,8 +1,8 @@
 import React from 'react';
 import {
   AppState,
+  PdfSheetKey,
   PumpStationData,
-  SectionTab,
   ShaftRecord,
   ShaftSnapshotItem,
   WbSectionData,
@@ -19,6 +19,7 @@ import {
   getTunnelStatus,
   resolveDisplayContext,
 } from '../utils/calculations';
+import { FullPageGisMapSheet } from './FullPageGisMaps';
 import { WbNavigationMapGroup, WcNavigationMapGroup } from './NavigationMaps';
 
 interface A1SheetDrawingProps {
@@ -28,7 +29,7 @@ interface A1SheetDrawingProps {
   onSelectWbNode?: (nodeId: string) => void;
   onSelectTitleBlock?: () => void;
   svgRef: React.Ref<SVGSVGElement>;
-  forceSection?: SectionTab;
+  forceSection?: PdfSheetKey;
 }
 
 const SHEET_W = 1682; // 841mm * 2
@@ -54,7 +55,24 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
   forceSection,
 }) => {
   const { viewMode, colors, settings } = state;
-  const activeSection = forceSection || state.activeSection;
+  const activeSection: PdfSheetKey = forceSection || state.activeSection;
+
+  if (
+    activeSection === 'wa-map' ||
+    activeSection === 'wb-map' ||
+    activeSection === 'wc-map'
+  ) {
+    return (
+      <FullPageGisMapSheet
+        kind={activeSection}
+        state={state}
+        svgRef={svgRef}
+        selectedShaftId={selectedShaftId}
+        onSelectShaft={onSelectShaft}
+        onSelectWbNode={onSelectWbNode}
+      />
+    );
+  }
 
   const {
     displayShafts: waShafts,
@@ -1861,7 +1879,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
 
   // ==================== HEADER STRIP SUBTITLE ====================
   const sectionLabelFull =
-    settings.sectionTitle && settings.sectionTitle !== 'WA Section — Shafts, Manholes & Micro-Tunnelling'
+    activeSection === 'wc-status'
+      ? 'WC SECTION — SHAFTS, MANHOLES & MICRO-TUNNELLING STATUS (WC-1 TO WC-27)'
+      : settings.sectionTitle && settings.sectionTitle !== 'WA Section — Shafts, Manholes & Micro-Tunnelling'
       ? settings.sectionTitle
       : activeSection === 'combined'
       ? 'COMBINED PROGRESS REPORT (WA + WB + WC + PUMP STATION)'
@@ -2296,6 +2316,135 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               <text x={626} y={144} fontSize={7.3} fill="#334155">DN2600: {(wcSummary.byDia.DN2600.completedM / 1000).toFixed(3)} / {(wcSummary.byDia.DN2600.totalM / 1000).toFixed(3)} km</text>
 
               {renderLegendAndTitle(938, 0, 374, 168, 1320, 0, 324, 168, true)}
+            </g>
+          </g>
+        );
+      })()}
+
+      {/* ===================================================================== */}
+      {/* VIEW 3B: PAGE 5 WC UPDATE STATUS SHEET (WA-STYLE 27 SHAFTS 9x3 GRID)  */}
+      {/* ===================================================================== */}
+      {activeSection === 'wc-status' && (() => {
+        const cols = 9;
+        const gridX = 46;
+        const gridY = 82;
+        const gridW = 1584;
+        const rowH = 292;
+        const wcBaseMap = baseline.wcShafts || {};
+
+        return (
+          <g>
+            {[1, 2].map((r) => (
+              <line
+                key={r}
+                x1={20}
+                y1={gridY + r * rowH - 6}
+                x2={SHEET_W - 20}
+                y2={gridY + r * rowH - 6}
+                stroke="#e2e8f0"
+                strokeWidth={0.8}
+                strokeDasharray="4,4"
+              />
+            ))}
+
+            {renderShaftGrid(wcData.shafts, wcBaseMap, {
+              cols,
+              gridX,
+              gridY,
+              gridW,
+              rowH,
+              connectLastToPump: false,
+            })}
+
+            {/* WC Bottom Footer (same WA-style 3-column summary + Legend + Title Block) */}
+            <g transform="translate(16, 996)">
+              <rect x={6} y={0} width={924} height={168} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+              <rect x={6} y={0} width={924} height={22} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+              <text x={468} y={15} textAnchor="middle" fontSize={10.5} fontWeight="700" fill="#1e3a8a">
+                WC SECTION (WC-1 TO WC-27) - PROGRESS SUMMARY
+              </text>
+              <line x1={270} y1={22} x2={270} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
+              <line x1={550} y1={22} x2={550} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
+
+              <text x={138} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                SHAFT PROGRESS (WC-1 to WC-27)
+              </text>
+              <text x={20} y={55} fontSize={7.6} fill="#0f172a">TOTAL SHAFT</text>
+              <text x={252} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {wcSummary.totalShafts} Nos</text>
+              <text x={20} y={71} fontSize={7.6} fill="#15803d" fontWeight="600">COMPLETED SHAFT</text>
+              <text x={252} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#15803d">: {String(wcSummary.completedShafts).padStart(2, '0')} Nos</text>
+              <text x={20} y={87} fontSize={7.6} fill="#b45309" fontWeight="600">ON-GOING SHAFT</text>
+              <text x={252} y={87} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#b45309">: {String(wcSummary.ongoingShafts).padStart(2, '0')} Nos</text>
+              <text x={20} y={103} fontSize={7.6} fill="#dc2626">REMAINING SHAFT</text>
+              <text x={252} y={103} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#dc2626">: {String(wcSummary.remainingShafts).padStart(2, '0')} Nos</text>
+
+              {viewMode === 'overall' ? (
+                <g>
+                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#faf5ff" stroke="#9333ea" strokeWidth={0.7} />
+                  <text x={24} y={128} fontSize={6.8} fontWeight="700" fill="#6b21a8">WC CORRIDOR ALIGNMENT:</text>
+                  <text x={24} y={140} fontSize={6.4} fill="#0f172a">
+                    - Route: Doyagonj Chowrasta (WC-1) to Pagla STP (WC-27)
+                  </text>
+                  <text x={24} y={152} fontSize={6.4} fontWeight="700" fill={wcSummary.completedTunnelLengthM > 0 || wcSummary.completedShafts > 0 ? '#15803d' : '#b91c1c'}>
+                    - Status: {wcSummary.completedTunnelLengthM > 0 || wcSummary.completedShafts > 0 ? 'Active Construction' : 'Not Started (Blank)'}
+                  </text>
+                </g>
+              ) : (
+                <g>
+                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
+                  <text x={24} y={129} fontSize={7} fontWeight="700" fill="#92400e">
+                    {viewMode === 'weekly' ? 'WEEKLY WC DELTA:' : 'MONTHLY WC DELTA:'}
+                  </text>
+                  <text x={24} y={142} fontSize={7} fill="#78350f">- Shaft Layers Added: +{wcSummary.delta.addedLayers} layers</text>
+                  <text x={24} y={153} fontSize={7} fill="#78350f">- Shafts Completed: +{wcSummary.delta.addedShaftsCompleted} Nos</text>
+                </g>
+              )}
+
+              <text x={410} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                MANHOLE PROGRESS (CASTING & RING)
+              </text>
+              <text x={284} y={55} fontSize={7.5} fontWeight="700" fill="#1d4ed8">Lower Casting Complete (100%)</text>
+              <text x={536} y={55} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#1d4ed8">: {String(wcSummary.castingCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={71} fontSize={7.5} fontWeight="600" fill="#b45309">Lower Casting On-going (&lt;100%)</text>
+              <text x={536} y={71} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#b45309">: {String(wcSummary.castingOngoingCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={87} fontSize={7.5} fill="#dc2626">Lower Casting Remaining</text>
+              <text x={536} y={87} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#dc2626">: {String(wcSummary.castingRemainingCount).padStart(2, '0')} Nos</text>
+
+              <line x1={284} y1={95} x2={536} y2={95} stroke="#cbd5e1" strokeWidth={0.6} />
+
+              <text x={284} y={109} fontSize={7.5} fontWeight="700" fill="#0284c7">Upper Ring Complete (100%)</text>
+              <text x={536} y={109} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#0284c7">: {String(wcSummary.precastCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={125} fontSize={7.5} fontWeight="600" fill="#b45309">Upper Ring On-going (&lt;100%)</text>
+              <text x={536} y={125} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#b45309">: {String(wcSummary.precastOngoingCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={141} fontSize={7.5} fill="#dc2626">Upper Ring Remaining</text>
+              <text x={536} y={141} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#dc2626">: {String(wcSummary.precastRemainingCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={157} fontSize={7.1} fontWeight="600" fill="#475569">Total Manholes: {wcSummary.totalManholes} Nos</text>
+
+              <text x={740} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                MICRO-TUNNELLING PROGRESS
+              </text>
+              <text x={564} y={55} fontSize={7.6} fontWeight="700" fill="#0f172a">TOTAL LENGTH</text>
+              <text x={914} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {(wcSummary.totalTunnelLengthM / 1000).toFixed(3)} km</text>
+              <text x={564} y={71} fontSize={7.6} fontWeight="700" fill="#a21caf">COMPLETED LENGTH</text>
+              <text x={914} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#a21caf">: {(wcSummary.completedTunnelLengthM / 1000).toFixed(3)} km ({wcSummary.tunnelPctOverall.toFixed(1)}%)</text>
+              <text x={564} y={91} fontSize={7.2} fill="#334155">1. DN 1800 (Total: {(wcSummary.byDia.DN1800.totalM / 1000).toFixed(3)} km)</text>
+              <text x={914} y={91} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(wcSummary.byDia.DN1800.completedM / 1000).toFixed(3)} km</text>
+              <text x={564} y={107} fontSize={7.2} fill="#334155">2. DN 2400 (Total: {(wcSummary.byDia.DN2400.totalM / 1000).toFixed(3)} km)</text>
+              <text x={914} y={107} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(wcSummary.byDia.DN2400.completedM / 1000).toFixed(3)} km</text>
+              <text x={564} y={123} fontSize={7.2} fill="#334155">3. DN 2600 (Total: {(wcSummary.byDia.DN2600.totalM / 1000).toFixed(3)} km)</text>
+              <text x={914} y={123} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(wcSummary.byDia.DN2600.completedM / 1000).toFixed(3)} km</text>
+
+              {viewMode !== 'overall' && (
+                <g>
+                  <rect x={562} y={133} width={354} height={24} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
+                  <text x={739} y={148} textAnchor="middle" fontSize={7.4} fontWeight="700" fill="#92400e">
+                    {viewMode === 'weekly' ? 'WEEKLY WC TUNNEL ADDED: ' : 'MONTHLY WC TUNNEL ADDED: '}
+                    +{wcSummary.delta.addedTunnelM.toFixed(1)} m ({(wcSummary.delta.addedTunnelM / 1000).toFixed(3)} km)
+                  </text>
+                </g>
+              )}
+
+              {renderLegendAndTitle(938, 0, 374, 168, 1320, 0, 324, 168, false)}
             </g>
           </g>
         );

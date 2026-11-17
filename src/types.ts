@@ -1,6 +1,12 @@
 export type WorkStatus = 'remaining' | 'ongoing' | 'complete';
 export type ViewMode = 'overall' | 'weekly' | 'monthly';
 export type SectionTab = 'wa' | 'wb' | 'wc' | 'combined';
+export type PdfSheetKey =
+  | SectionTab
+  | 'wa-map'
+  | 'wb-map'
+  | 'wc-map'
+  | 'wc-status';
 export type LayoutMode = '10col' | '12col';
 export type UiLang = 'bn' | 'en';
 export type PipeDia =
