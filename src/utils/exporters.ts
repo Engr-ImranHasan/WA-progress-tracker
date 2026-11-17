@@ -66,17 +66,17 @@ export async function preloadSectionMapSnapshots(state: AppState): Promise<void>
   // Combined side-by-side WC map: x=1296, y=704, w=368, h=464 -> mapX=1300, mapY=723, mapW=360, mapH=441
   const wcCompactVp = buildGeoViewport(state.wc.geoNodes, 1300, 723, 360, 441, 0.12);
 
-  // Full-A1 GIS Map Pages (Pages 2, 3, 4 in 5-Page PDF: x=50, y=74, w=1582, h=1076, padRatio=0.085, 1600x1088)
+  // Full-A1 Portrait GIS Map Pages (Pages 2, 3, 4 in 5-Page PDF: x=44, y=78, w=1100, h=1566, padRatio=0.09, 1120x1594)
   const waFullA1Vp = buildGeoViewport(
     [...INITIAL_WA_GEO_NODES, GOLAPBAG_SPS_COORD],
-    50,
-    74,
-    1582,
-    1076,
-    0.085
+    44,
+    78,
+    1100,
+    1566,
+    0.09
   );
-  const wbFullA1Vp = buildGeoViewport(state.wb.nodes, 50, 74, 1582, 1076, 0.085);
-  const wcFullA1Vp = buildGeoViewport(state.wc.geoNodes, 50, 74, 1582, 1076, 0.085);
+  const wbFullA1Vp = buildGeoViewport(state.wb.nodes, 44, 78, 1100, 1566, 0.09);
+  const wcFullA1Vp = buildGeoViewport(state.wc.geoNodes, 44, 78, 1100, 1566, 0.09);
 
   const wbFullW = Math.min(1100, Math.max(480, Math.round(942 * 1.35)));
   const wbFullH = Math.min(1100, Math.max(420, Math.round(896 * 1.35)));
@@ -90,36 +90,54 @@ export async function preloadSectionMapSnapshots(state: AppState): Promise<void>
     ensureMapTileSnapshot(wbCompactVp, state.settings.mapStyle, compactW, compactH),
     ensureMapTileSnapshot(wcFullVp, state.settings.mapStyle, wcFullW, wcFullH),
     ensureMapTileSnapshot(wcCompactVp, state.settings.mapStyle, compactW, compactH),
-    ensureMapTileSnapshot(waFullA1Vp, state.settings.mapStyle, 1600, 1088),
-    ensureMapTileSnapshot(wbFullA1Vp, state.settings.mapStyle, 1600, 1088),
-    ensureMapTileSnapshot(wcFullA1Vp, state.settings.mapStyle, 1600, 1088),
+    ensureMapTileSnapshot(waFullA1Vp, state.settings.mapStyle, 1120, 1594),
+    ensureMapTileSnapshot(wbFullA1Vp, state.settings.mapStyle, 1120, 1594),
+    ensureMapTileSnapshot(wcFullA1Vp, state.settings.mapStyle, 1120, 1594),
   ]);
+}
+
+function getSvgPageSpec(svgEl: SVGSVGElement): {
+  orientation: 'landscape' | 'portrait';
+  widthMm: number;
+  heightMm: number;
+} {
+  const vb = svgEl.getAttribute('viewBox') || '';
+  const parts = vb.trim().split(/[\s,]+/).map(Number);
+  if (parts.length === 4 && Number.isFinite(parts[2]) && Number.isFinite(parts[3]) && parts[3] > parts[2]) {
+    return { orientation: 'portrait', widthMm: 594, heightMm: 841 };
+  }
+  return { orientation: 'landscape', widthMm: 841, heightMm: 594 };
 }
 
 export async function exportA1VectorPdf(
   svgEl: SVGSVGElement,
   filename: string
 ): Promise<void> {
-  const clone = sanitizeSvgCloneForExport(svgEl, '841', '594');
+  const spec = getSvgPageSpec(svgEl);
+  const clone = sanitizeSvgCloneForExport(
+    svgEl,
+    String(spec.widthMm),
+    String(spec.heightMm)
+  );
   const pdf = new jsPDF({
-    orientation: 'landscape',
+    orientation: spec.orientation,
     unit: 'mm',
-    format: [841, 594],
+    format: [spec.widthMm, spec.heightMm],
     compress: true,
   });
 
   await svg2pdf(clone, pdf, {
     x: 0,
     y: 0,
-    width: 841,
-    height: 594,
+    width: spec.widthMm,
+    height: spec.heightMm,
   });
 
   pdf.save(filename);
 }
 
 /**
- * Exports multiple A1 landscape sheets (e.g. Page 1 WA, Page 2 WB, Page 3 WC)
+ * Exports multiple ISO A1 sheets (mixed Landscape & Portrait supported automatically)
  * into a single multi-page A1 vector PDF file.
  */
 export async function exportMultiPageA1VectorPdf(
@@ -127,23 +145,29 @@ export async function exportMultiPageA1VectorPdf(
   filename: string
 ): Promise<void> {
   if (svgEls.length === 0) return;
+  const firstSpec = getSvgPageSpec(svgEls[0]);
   const pdf = new jsPDF({
-    orientation: 'landscape',
+    orientation: firstSpec.orientation,
     unit: 'mm',
-    format: [841, 594],
+    format: [firstSpec.widthMm, firstSpec.heightMm],
     compress: true,
   });
 
   for (let i = 0; i < svgEls.length; i++) {
+    const spec = getSvgPageSpec(svgEls[i]);
     if (i > 0) {
-      pdf.addPage([841, 594], 'landscape');
+      pdf.addPage([spec.widthMm, spec.heightMm], spec.orientation);
     }
-    const clone = sanitizeSvgCloneForExport(svgEls[i], '841', '594');
+    const clone = sanitizeSvgCloneForExport(
+      svgEls[i],
+      String(spec.widthMm),
+      String(spec.heightMm)
+    );
     await svg2pdf(clone, pdf, {
       x: 0,
       y: 0,
-      width: 841,
-      height: 594,
+      width: spec.widthMm,
+      height: spec.heightMm,
     });
   }
 
@@ -151,7 +175,8 @@ export async function exportMultiPageA1VectorPdf(
 }
 
 export function exportSvgFile(svgEl: SVGSVGElement, filename: string): void {
-  const clone = sanitizeSvgCloneForExport(svgEl, '841mm', '594mm');
+  const spec = getSvgPageSpec(svgEl);
+  const clone = sanitizeSvgCloneForExport(svgEl, `${spec.widthMm}mm`, `${spec.heightMm}mm`);
   const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone);
   triggerDownload(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }), filename);
 }
@@ -160,8 +185,9 @@ export async function exportHighResPng(
   svgEl: SVGSVGElement,
   filename: string
 ): Promise<void> {
-  const width = 4205;
-  const height = 2970;
+  const spec = getSvgPageSpec(svgEl);
+  const width = spec.orientation === 'portrait' ? 2970 : 4205;
+  const height = spec.orientation === 'portrait' ? 4205 : 2970;
   const clone = sanitizeSvgCloneForExport(svgEl, String(width), String(height));
 
   const svgStr = new XMLSerializer().serializeToString(clone);

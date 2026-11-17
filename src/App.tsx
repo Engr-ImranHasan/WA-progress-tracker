@@ -1262,8 +1262,8 @@ export function App() {
 
             <p className="text-xs text-slate-600 leading-relaxed">
               {isBn
-                ? 'এই একটি ফাইলের ভেতরে WA, WB ও WC — তিনটি পেজের সব তথ্য একসাথে সেভ থাকবে এবং Weekly/Monthly তুলনা ও ৩-পেজ PDF এক্সপোর্টে ব্যবহার করা যাবে।'
-                : 'Saves WA, WB, Pump Station, and WC all inside one single file for viewing, editing, 3-Page PDF export, and Weekly/Monthly comparison.'}
+                ? 'এই একটি ফাইলের ভেতরে WA, WB ও WC — তিনটি পেজের সব তথ্য একসাথে সেভ থাকবে এবং Weekly/Monthly তুলনা ও ৫-পেজ PDF এক্সপোর্টে ব্যবহার করা যাবে।'
+                : 'Saves WA, WB, Pump Station, and WC all inside one single file for viewing, editing, 5-Page PDF export, and Weekly/Monthly comparison.'}
             </p>
 
             <div className="space-y-3 text-xs">

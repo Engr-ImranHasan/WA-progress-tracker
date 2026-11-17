@@ -381,10 +381,10 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-3 gap-1.5 text-xs">
               <div>
                 <label className="block text-[10px] font-semibold text-slate-600">
-                  {isBn ? 'মোট দৈর্ঘ্য (Total m)' : 'Total Length (m)'}
+                  {isBn ? 'মোট (m)' : 'Total (m)'}
                 </label>
                 <input
                   type="number"
@@ -405,7 +405,7 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-emerald-800">
-                  {isBn ? 'সম্পন্ন দৈর্ঘ্য (Completed m)' : 'Completed Length (m)'}
+                  {isBn ? 'সম্পন্ন (m)' : 'Completed (m)'}
                 </label>
                 <input
                   type="number"
@@ -420,10 +420,29 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
                   className="mt-0.5 w-full rounded border border-emerald-400 bg-white px-2 py-1 text-xs font-bold text-emerald-900"
                 />
               </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-blue-800">
+                  {isBn ? 'সম্পন্ন (%)' : 'Done (%)'}
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min={0}
+                  max={100}
+                  aria-label="WB Completed (%)"
+                  value={Number(pct.toFixed(1))}
+                  onChange={(e) => {
+                    const p = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                    const m = Number(((wb.totalLengthM * p) / 100).toFixed(1));
+                    onUpdateWb((prev) => ({ ...prev, completedLengthM: m }));
+                  }}
+                  className="mt-0.5 w-full rounded border border-blue-400 bg-white px-2 py-1 text-xs font-bold text-blue-900"
+                />
+              </div>
             </div>
 
             {/* Visual Green + Blue Circle Tip + Red Remaining bar */}
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <input
                 type="range"
                 min={0}
@@ -435,6 +454,44 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
                 }
                 className="w-full accent-emerald-600"
               />
+              <div className="grid grid-cols-5 gap-1 text-[10px]">
+                {[25, 50, 100].map((inc) => (
+                  <button
+                    key={inc}
+                    onClick={() =>
+                      onUpdateWb((prev) => ({
+                        ...prev,
+                        completedLengthM: Math.min(prev.totalLengthM, Number((prev.completedLengthM + inc).toFixed(1))),
+                      }))
+                    }
+                    className="rounded border border-emerald-300 bg-white py-0.5 font-bold text-emerald-800 hover:bg-emerald-100"
+                  >
+                    +{inc}m
+                  </button>
+                ))}
+                <button
+                  onClick={() =>
+                    onUpdateWb((prev) => ({
+                      ...prev,
+                      completedLengthM: Number((prev.totalLengthM * 0.5).toFixed(1)),
+                    }))
+                  }
+                  className="rounded border border-blue-300 bg-white py-0.5 font-bold text-blue-800 hover:bg-blue-50"
+                >
+                  50%
+                </button>
+                <button
+                  onClick={() =>
+                    onUpdateWb((prev) => ({
+                      ...prev,
+                      completedLengthM: prev.totalLengthM,
+                    }))
+                  }
+                  className="rounded border border-emerald-700 bg-emerald-600 py-0.5 font-bold text-white hover:bg-emerald-700"
+                >
+                  100%
+                </button>
+              </div>
               <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-rose-500">
                 <div
                   className="h-full bg-emerald-600 transition-all"
@@ -556,7 +613,29 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[10px] font-semibold text-slate-500">S. Date</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-semibold text-slate-500">S. Date</label>
+                  <span className="flex gap-1 text-[9px]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateNode(currentNode.id, { sDate: state.settings.reportDate })
+                      }
+                      className="text-blue-600 font-bold hover:underline"
+                    >
+                      RepDate
+                    </button>
+                    {currentNode.sDate && (
+                      <button
+                        type="button"
+                        onClick={() => updateNode(currentNode.id, { sDate: '' })}
+                        className="text-rose-500 font-bold hover:underline"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                </div>
                 <input
                   type="date"
                   value={currentNode.sDate}
@@ -565,7 +644,29 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-semibold text-slate-500">E. Date</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-semibold text-slate-500">E. Date</label>
+                  <span className="flex gap-1 text-[9px]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateNode(currentNode.id, { eDate: state.settings.reportDate })
+                      }
+                      className="text-blue-600 font-bold hover:underline"
+                    >
+                      RepDate
+                    </button>
+                    {currentNode.eDate && (
+                      <button
+                        type="button"
+                        onClick={() => updateNode(currentNode.id, { eDate: '' })}
+                        className="text-rose-500 font-bold hover:underline"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                </div>
                 <input
                   type="date"
                   value={currentNode.eDate}

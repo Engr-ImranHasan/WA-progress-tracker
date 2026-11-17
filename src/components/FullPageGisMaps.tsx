@@ -30,14 +30,15 @@ import {
   yToLat,
 } from '../utils/geoMap';
 
+// ISO A1 Portrait geometry (594 x 841 mm -> 1188 x 1682 viewBox)
 export const FULL_MAP_FRAME = {
-  x: 50,
-  y: 74,
-  w: 1582,
-  h: 1076,
-  padRatio: 0.085,
-  tileOutW: 1600,
-  tileOutH: 1088,
+  x: 44,
+  y: 78,
+  w: 1100,
+  h: 1566,
+  padRatio: 0.09,
+  tileOutW: 1120,
+  tileOutH: 1594,
 };
 
 type MapKind = 'wa-map' | 'wb-map' | 'wc-map';
@@ -51,28 +52,22 @@ interface FullPageGisMapProps {
   onSelectWbNode?: (id: string) => void;
 }
 
-const SHEET_W = 1682;
-const SHEET_H = 1188;
+const SHEET_W = 1188;
+const SHEET_H = 1682;
 
-// Symbology colors aligned with WA-WB-Construction-progress-15nov.pdf
 const GIS_GREEN = '#16a34a';
-const GIS_GREEN_DARK = '#14532d';
 const GIS_BLUE = '#2563eb';
-const GIS_BLUE_DARK = '#1e3a8a';
 const GIS_RED = '#dc2626';
-const GIS_RED_DARK = '#7f1d1d';
 const GIS_HIGHLIGHT = '#f59e0b';
+
+function trunc(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max - 1) + '...' : s;
+}
 
 function statusStroke(st: WorkStatus): string {
   if (st === 'complete') return GIS_GREEN;
   if (st === 'ongoing') return GIS_BLUE;
   return GIS_RED;
-}
-
-function statusDarkStroke(st: WorkStatus): string {
-  if (st === 'complete') return GIS_GREEN_DARK;
-  if (st === 'ongoing') return GIS_BLUE_DARK;
-  return GIS_RED_DARK;
 }
 
 /**
@@ -137,7 +132,7 @@ interface RectBox {
   y1: number;
 }
 
-function boxesOverlap(a: RectBox, b: RectBox, margin = 2): boolean {
+function boxesOverlap(a: RectBox, b: RectBox, margin = 3): boolean {
   return !(
     a.x1 + margin < b.x0 ||
     b.x1 + margin < a.x0 ||
@@ -163,10 +158,52 @@ function resolveSmartLabel(
   preferredSide: 'right' | 'left' | 'top' | 'bottom' = 'right',
   nodeDotRadius = 8
 ): PlacedLabel {
-  const estW = Math.max(22, label.length * fontSize * 0.58 + 4);
+  const estW = Math.max(24, label.length * fontSize * 0.58 + 4);
   const estH = fontSize + 3;
 
-  const baseOffsets: Array<[number, number, 'start' | 'middle' | 'end']> = [
+  const baseOffsets: Array<[number, number, 'start' | 'middle' | 'end']> =
+    preferredSide === 'left'
+      ? [
+          [-(nodeDotRadius + 5), 3, 'end'],
+          [nodeDotRadius + 5, 3, 'start'],
+          [0, -(nodeDotRadius + 5), 'middle'],
+          [0, nodeDotRadius + estH + 1, 'middle'],
+          [-(nodeDotRadius + 16), -12, 'end'],
+          [nodeDotRadius + 16, 14, 'start'],
+          [-(nodeDotRadius + 24), 14, 'end'],
+          [nodeDotRadius + 24, -12, 'start'],
+          [-(nodeDotRadius + 34), -2, 'end'],
+          [nodeDotRadius + 34, -2, 'start'],
+          [-(nodeDotRadius + 22), -24, 'end'],
+          [nodeDotRadius + 22, 26, 'start'],
+        ]
+      : preferredSide === 'top'
+      ? [
+          [0, -(nodeDotRadius + 5), 'middle'],
+          [0, nodeDotRadius + estH + 1, 'middle'],
+          [nodeDotRadius + 5, 3, 'start'],
+          [-(nodeDotRadius + 5), 3, 'end'],
+          [nodeDotRadius + 14, -14, 'start'],
+          [-(nodeDotRadius + 14), -14, 'end'],
+          [nodeDotRadius + 24, 16, 'start'],
+          [-(nodeDotRadius + 24), 16, 'end'],
+          [0, -(nodeDotRadius + 22), 'middle'],
+          [0, nodeDotRadius + estH + 18, 'middle'],
+        ]
+      : preferredSide === 'bottom'
+      ? [
+          [0, nodeDotRadius + estH + 1, 'middle'],
+          [0, -(nodeDotRadius + 5), 'middle'],
+          [nodeDotRadius + 5, 3, 'start'],
+          [-(nodeDotRadius + 5), 3, 'end'],
+          [nodeDotRadius + 16, 16, 'start'],
+          [-(nodeDotRadius + 16), 16, 'end'],
+          [nodeDotRadius + 24, -14, 'start'],
+          [-(nodeDotRadius + 24), -14, 'end'],
+          [0, nodeDotRadius + estH + 20, 'middle'],
+        ]
+      : [
+          [nodeDotRadius + 5, 3, 'start'],
           [-(nodeDotRadius + 5), 3, 'end'],
           [0, -(nodeDotRadius + 5), 'middle'],
           [0, nodeDotRadius + estH + 1, 'middle'],
@@ -178,62 +215,7 @@ function resolveSmartLabel(
           [-(nodeDotRadius + 34), -2, 'end'],
           [nodeDotRadius + 22, -24, 'start'],
           [-(nodeDotRadius + 22), 26, 'end'],
-          [nodeDotRadius + 36, 22, 'start'],
-          [-(nodeDotRadius + 36), -22, 'end'],
         ];
-
-  if (preferredSide === 'left') {
-    baseOffsets.splice(
-      0,
-      baseOffsets.length,
-      [-(nodeDotRadius + 5), 3, 'end'],
-      [nodeDotRadius + 5, 3, 'start'],
-      [0, -(nodeDotRadius + 5), 'middle'],
-      [0, nodeDotRadius + estH + 1, 'middle'],
-      [-(nodeDotRadius + 16), -12, 'end'],
-      [nodeDotRadius + 16, 14, 'start'],
-      [-(nodeDotRadius + 24), 14, 'end'],
-      [nodeDotRadius + 24, -12, 'start'],
-      [-(nodeDotRadius + 34), -2, 'end'],
-      [nodeDotRadius + 34, -2, 'start'],
-      [-(nodeDotRadius + 22), -24, 'end'],
-      [nodeDotRadius + 22, 26, 'start'],
-      [-(nodeDotRadius + 36), 22, 'end'],
-      [nodeDotRadius + 36, -22, 'start']
-    );
-  } else if (preferredSide === 'top') {
-    baseOffsets.splice(
-      0,
-      baseOffsets.length,
-      [0, -(nodeDotRadius + 5), 'middle'],
-      [0, nodeDotRadius + estH + 1, 'middle'],
-      [nodeDotRadius + 5, 3, 'start'],
-      [-(nodeDotRadius + 5), 3, 'end'],
-      [nodeDotRadius + 14, -14, 'start'],
-      [-(nodeDotRadius + 14), -14, 'end'],
-      [nodeDotRadius + 24, 16, 'start'],
-      [-(nodeDotRadius + 24), 16, 'end'],
-      [0, -(nodeDotRadius + 22), 'middle'],
-      [0, nodeDotRadius + estH + 18, 'middle'],
-      [nodeDotRadius + 32, -26, 'start'],
-      [-(nodeDotRadius + 32), 26, 'end']
-    );
-  } else if (preferredSide === 'bottom') {
-    baseOffsets.splice(
-      0,
-      baseOffsets.length,
-      [0, nodeDotRadius + estH + 1, 'middle'],
-      [0, -(nodeDotRadius + 5), 'middle'],
-      [nodeDotRadius + 5, 3, 'start'],
-      [-(nodeDotRadius + 5), 3, 'end'],
-      [nodeDotRadius + 16, 16, 'start'],
-      [-(nodeDotRadius + 16), 16, 'end'],
-      [nodeDotRadius + 24, -14, 'start'],
-      [-(nodeDotRadius + 24), -14, 'end'],
-      [0, nodeDotRadius + estH + 20, 'middle'],
-      [0, -(nodeDotRadius + 22), 'middle']
-    );
-  }
 
   const makeBox = (dx: number, dy: number, anchor: 'start' | 'middle' | 'end'): RectBox => {
     const lx = ptX + dx;
@@ -254,8 +236,7 @@ function resolveSmartLabel(
     ) {
       continue;
     }
-    const collides = occupied.some((o) => boxesOverlap(box, o));
-    if (!collides) {
+    if (!occupied.some((o) => boxesOverlap(box, o, 2))) {
       occupied.push(box);
       return {
         x: ptX + dx,
@@ -266,8 +247,7 @@ function resolveSmartLabel(
     }
   }
 
-  // Spiral fallback scan if cluster is tight (e.g. WB1-4, WB35-38)
-  for (let dist = 28; dist <= 64; dist += 12) {
+  for (let dist = 28; dist <= 72; dist += 12) {
     for (let deg = 0; deg < 360; deg += 45) {
       const rad = (deg * Math.PI) / 180;
       const dx = Math.round(Math.cos(rad) * dist);
@@ -282,7 +262,7 @@ function resolveSmartLabel(
       ) {
         continue;
       }
-      if (!occupied.some((o) => boxesOverlap(box, o))) {
+      if (!occupied.some((o) => boxesOverlap(box, o, 2))) {
         occupied.push(box);
         return { x: ptX + dx, y: ptY + dy, anchor, leaderNeeded: true };
       }
@@ -291,12 +271,219 @@ function resolveSmartLabel(
 
   const [dx, dy, anchor] = baseOffsets[0];
   occupied.push(makeBox(dx, dy, anchor));
-  return {
-    x: ptX + dx,
-    y: ptY + dy,
-    anchor,
-    leaderNeeded: false,
-  };
+  return { x: ptX + dx, y: ptY + dy, anchor, leaderNeeded: false };
+}
+
+/**
+ * Large, highlighted arrow-pointed Landmark / Infrastructure Callout Badge
+ * (with explicit vector triangle arrowhead compatible with svg2pdf.js).
+ */
+function renderHighlightedCallout(
+  targetX: number,
+  targetY: number,
+  text: string,
+  occupied: RectBox[],
+  bounds: RectBox,
+  opts?: {
+    preferredSide?: 'left' | 'right' | 'top' | 'bottom';
+    baseOffsetX?: number;
+    baseOffsetY?: number;
+    fontSize?: number;
+    bgFill?: string;
+    borderStroke?: string;
+    textFill?: string;
+    arrowStroke?: string;
+    key?: string;
+  }
+) {
+  const fontSize = opts?.fontSize ?? 11.2;
+  const side = opts?.preferredSide ?? 'right';
+  const boxW = Math.max(82, Math.round(text.length * fontSize * 0.56 + 18));
+  const boxH = Math.round(fontSize + 11);
+
+  const prefDx = opts?.baseOffsetX ?? (side === 'left' ? -(boxW + 78) : 78);
+  const prefDy = opts?.baseOffsetY ?? 0;
+
+  const candidates: Array<[number, number]> = [
+    [prefDx, prefDy],
+    [prefDx, prefDy - 28],
+    [prefDx, prefDy + 28],
+    [side === 'left' ? -(boxW + 105) : 105, prefDy],
+    [side === 'left' ? -(boxW + 68) : 68, prefDy - 46],
+    [side === 'left' ? -(boxW + 68) : 68, prefDy + 46],
+    [side === 'left' ? 78 : -(boxW + 78), prefDy],
+    [side === 'left' ? 90 : -(boxW + 90), prefDy - 32],
+    [side === 'left' ? 90 : -(boxW + 90), prefDy + 32],
+  ];
+
+  let chosenX = targetX + prefDx;
+  let chosenY = targetY + prefDy - boxH / 2;
+
+  for (const [dx, dy] of candidates) {
+    const x0 = targetX + dx;
+    const y0 = targetY + dy - boxH / 2;
+    const rect: RectBox = { x0, y0, x1: x0 + boxW, y1: y0 + boxH };
+    if (
+      rect.x0 < bounds.x0 + 6 ||
+      rect.x1 > bounds.x1 - 6 ||
+      rect.y0 < bounds.y0 + 6 ||
+      rect.y1 > bounds.y1 - 6
+    ) {
+      continue;
+    }
+    if (!occupied.some((o) => boxesOverlap(rect, o, 4))) {
+      chosenX = x0;
+      chosenY = y0;
+      occupied.push(rect);
+      break;
+    }
+  }
+
+  // Clamp inside bounds cleanly if fallback hit
+  chosenX = Math.max(bounds.x0 + 6, Math.min(bounds.x1 - boxW - 6, chosenX));
+  chosenY = Math.max(bounds.y0 + 6, Math.min(bounds.y1 - boxH - 6, chosenY));
+
+  const pillCx = chosenX + boxW / 2;
+  const pillCy = chosenY + boxH / 2;
+  // Nearest edge point of pill toward target
+  const startX =
+    pillCx > targetX + 12 ? chosenX : pillCx < targetX - 12 ? chosenX + boxW : pillCx;
+  const startY =
+    Math.abs(pillCx - targetX) < boxW / 2
+      ? pillCy > targetY
+        ? chosenY
+        : chosenY + boxH
+      : pillCy;
+
+  const dx = targetX - startX;
+  const dy = targetY - startY;
+  const len = Math.max(1, Math.hypot(dx, dy));
+  const ux = dx / len;
+  const uy = dy / len;
+
+  // Stop arrowhead ~8px before target center so it points crisply right onto target node edge
+  const tipX = targetX - ux * 8;
+  const tipY = targetY - uy * 8;
+  const arrowLen = 8.5;
+  const arrowHalfW = 4.2;
+  const baseX = tipX - ux * arrowLen;
+  const baseY = tipY - uy * arrowLen;
+  const px = -uy;
+  const py = ux;
+
+  // Reserve sampled arrow corridor boxes in `occupied` so node labels NEVER sit under arrow lines!
+  for (let t = 0.15; t <= 0.85; t += 0.23) {
+    const ax = startX + (tipX - startX) * t;
+    const ay = startY + (tipY - startY) * t;
+    occupied.push({ x0: ax - 9, y0: ay - 7, x1: ax + 9, y1: ay + 7 });
+  }
+
+  const bgFill = opts?.bgFill ?? '#fffbeb';
+  const borderStroke = opts?.borderStroke ?? '#b45309';
+  const textFill = opts?.textFill ?? '#0f172a';
+  const arrowStroke = opts?.arrowStroke ?? borderStroke;
+
+  return (
+    <g key={opts?.key}>
+      {/* White outer casing halo on arrow line for high contrast over streets */}
+      <line
+        x1={startX}
+        y1={startY}
+        x2={baseX}
+        y2={baseY}
+        stroke="#ffffff"
+        strokeWidth={4.2}
+        strokeLinecap="round"
+      />
+      <line
+        x1={startX}
+        y1={startY}
+        x2={baseX}
+        y2={baseY}
+        stroke={arrowStroke}
+        strokeWidth={2.0}
+        strokeLinecap="round"
+      />
+      {/* Highlighted vector arrowhead */}
+      <polygon
+        points={`${tipX.toFixed(1)},${tipY.toFixed(1)} ${(baseX + px * arrowHalfW).toFixed(1)},${(baseY + py * arrowHalfW).toFixed(1)} ${(baseX - px * arrowHalfW).toFixed(1)},${(baseY - py * arrowHalfW).toFixed(1)}`}
+        fill={arrowStroke}
+        stroke="#ffffff"
+        strokeWidth={0.9}
+      />
+
+      {/* Callout badge shadow & frosted card */}
+      <rect
+        x={chosenX + 1.5}
+        y={chosenY + 1.8}
+        width={boxW}
+        height={boxH}
+        rx={4}
+        fill="#0f172a"
+        fillOpacity={0.14}
+      />
+      <rect
+        x={chosenX}
+        y={chosenY}
+        width={boxW}
+        height={boxH}
+        rx={4}
+        fill={bgFill}
+        fillOpacity={0.96}
+        stroke={borderStroke}
+        strokeWidth={1.35}
+      />
+      <text
+        x={pillCx}
+        y={chosenY + boxH * 0.68}
+        textAnchor="middle"
+        fontSize={fontSize}
+        fontWeight="700"
+        fill={textFill}
+      >
+        {text}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * Prominent Highlighted Administrative Zone Badge (DNCC / DSCC).
+ */
+function renderZoneBadge(
+  cx: number,
+  cy: number,
+  text: string,
+  variant: 'dncc' | 'dscc',
+  occupied: RectBox[]
+) {
+  const fontSize = 13.0;
+  const w = Math.max(120, Math.round(text.length * 8.4 + 26));
+  const h = 28;
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+  occupied.push({ x0: x, y0: y, x1: x + w, y1: y + h });
+
+  const fill = variant === 'dncc' ? '#fef3c7' : '#e0e7ff';
+  const stroke = variant === 'dncc' ? '#b45309' : '#1e40af';
+  const textCol = variant === 'dncc' ? '#78350f' : '#1e3a8a';
+
+  return (
+    <g key={`zone-${text}`}>
+      <rect x={x + 1.5} y={y + 2} width={w} height={h} rx={5} fill="#0f172a" fillOpacity={0.15} />
+      <rect x={x} y={y} width={w} height={h} rx={5} fill={fill} fillOpacity={0.95} stroke={stroke} strokeWidth={1.9} />
+      <text
+        x={cx}
+        y={cy + 4.5}
+        textAnchor="middle"
+        fontSize={fontSize}
+        fontWeight="800"
+        fill={textCol}
+      >
+        {text}
+      </text>
+    </g>
+  );
 }
 
 function renderCompassRose(cx: number, cy: number, r = 34) {
@@ -308,24 +495,18 @@ function renderCompassRose(cx: number, cy: number, r = 34) {
         cy={0}
         r={r + 12}
         fill="#ffffff"
-        fillOpacity={0.86}
-        stroke="#cbd5e1"
-        strokeWidth={0.8}
+        fillOpacity={0.9}
+        stroke="#94a3b8"
+        strokeWidth={0.9}
       />
-      {/* N / S / E / W star arms (black left/top halves, white right/bottom halves like reference PDF) */}
-      {/* North point */}
       <polygon points={`0,${-r} 0,0 ${-inner},${-inner}`} fill="#0f172a" stroke="#0f172a" strokeWidth={0.7} />
       <polygon points={`0,${-r} ${inner},${-inner} 0,0`} fill="#ffffff" stroke="#0f172a" strokeWidth={0.7} />
-      {/* South point */}
       <polygon points={`0,${r} 0,0 ${inner},${inner}`} fill="#0f172a" stroke="#0f172a" strokeWidth={0.7} />
       <polygon points={`0,${r} ${-inner},${inner} 0,0`} fill="#ffffff" stroke="#0f172a" strokeWidth={0.7} />
-      {/* East point */}
       <polygon points={`${r},0 0,0 ${inner},${-inner}`} fill="#0f172a" stroke="#0f172a" strokeWidth={0.7} />
       <polygon points={`${r},0 ${inner},${inner} 0,0`} fill="#ffffff" stroke="#0f172a" strokeWidth={0.7} />
-      {/* West point */}
       <polygon points={`${-r},0 0,0 ${-inner},${inner}`} fill="#0f172a" stroke="#0f172a" strokeWidth={0.7} />
       <polygon points={`${-r},0 ${-inner},${-inner} 0,0`} fill="#ffffff" stroke="#0f172a" strokeWidth={0.7} />
-      {/* Minor diagonal arms */}
       <polygon points={`${r * 0.56},${-r * 0.56} ${inner},0 0,${-inner}`} fill="#475569" fillOpacity={0.35} stroke="#475569" strokeWidth={0.4} />
       <polygon points={`${-r * 0.56},${-r * 0.56} 0,${-inner} ${-inner},0`} fill="#475569" fillOpacity={0.35} stroke="#475569" strokeWidth={0.4} />
       <polygon points={`${r * 0.56},${r * 0.56} 0,${inner} ${inner},0`} fill="#475569" fillOpacity={0.35} stroke="#475569" strokeWidth={0.4} />
@@ -347,38 +528,37 @@ function renderCompassRose(cx: number, cy: number, r = 34) {
   );
 }
 
+/**
+ * Clean Kilometers Scale Bar & Esri Source Credit ONLY (no Sheet/Contractor metadata inside map scale).
+ */
 function renderScaleBarAndAttribution(
   vp: ProjectedViewport,
   rightEdgeX: number,
-  bottomEdgeY: number,
-  sheetLabel: string,
-  settingsDwg: string,
-  contractorRep: string
+  bottomEdgeY: number
 ) {
   const mPerSvg = computeMetersPerSvgUnit(vp);
-  // Pick the clean decimal km bar closest to 240 SVG units for true geographic scale
   const candidatesKm = [0.2, 0.4, 0.5, 0.8, 1.0, 1.5, 2.0, 3.0];
   let chosenKm = 0.5;
   let bestDiff = Infinity;
   for (const c of candidatesKm) {
     const px = (c * 1000) / mPerSvg;
-    const diff = Math.abs(px - 245);
-    if (px >= 130 && px <= 330 && diff < bestDiff) {
+    const diff = Math.abs(px - 220);
+    if (px >= 125 && px <= 300 && diff < bestDiff) {
       bestDiff = diff;
       chosenKm = c;
     }
   }
-  const barW = Math.min(340, Math.max(130, (chosenKm * 1000) / mPerSvg));
-  const segCount = 4; // 0, 1/4, 1/2, 1/1 stops
+  const barW = Math.min(310, Math.max(125, (chosenKm * 1000) / mPerSvg));
+  const segCount = 4;
   const qW = barW / segCount;
 
-  const cardW = Math.max(barW + 86, 365);
-  const cardH = 54;
+  const cardW = Math.max(barW + 86, 336);
+  const cardH = 44;
   const cx = rightEdgeX - cardW;
   const cy = bottomEdgeY - cardH;
 
   const barX = cx + 14;
-  const barY = cy + 20;
+  const barY = cy + 19;
 
   return (
     <g>
@@ -389,12 +569,11 @@ function renderScaleBarAndAttribution(
         height={cardH}
         rx={3}
         fill="#ffffff"
-        fillOpacity={0.93}
+        fillOpacity={0.94}
         stroke="#64748b"
-        strokeWidth={0.8}
+        strokeWidth={0.85}
       />
 
-      {/* Scale tick labels */}
       {[
         { frac: 0, lbl: '0' },
         { frac: 0.25, lbl: `${(chosenKm * 0.25).toFixed(3).replace(/\.?0+$/, '')}` },
@@ -406,7 +585,7 @@ function renderScaleBarAndAttribution(
           x={barX + barW * t.frac}
           y={barY - 4}
           textAnchor="middle"
-          fontSize={8.0}
+          fontSize={8.2}
           fontWeight="700"
           fill="#0f172a"
         >
@@ -416,48 +595,19 @@ function renderScaleBarAndAttribution(
       <text
         x={barX + barW + 8}
         y={barY + 6}
-        fontSize={8.0}
+        fontSize={8.2}
         fontWeight="700"
         fill="#0f172a"
       >
         Kilometers
       </text>
 
-      {/* Alternating Black / White Scale Bar */}
-      <rect
-        x={barX}
-        y={barY}
-        width={qW}
-        height={7}
-        fill="#0f172a"
-        stroke="#0f172a"
-        strokeWidth={0.7}
-      />
-      <rect
-        x={barX + qW}
-        y={barY}
-        width={qW}
-        height={7}
-        fill="#ffffff"
-        stroke="#0f172a"
-        strokeWidth={0.7}
-      />
-      <rect
-        x={barX + qW * 2}
-        y={barY}
-        width={qW * 2}
-        height={7}
-        fill="#0f172a"
-        stroke="#0f172a"
-        strokeWidth={0.7}
-      />
+      <rect x={barX} y={barY} width={qW} height={7} fill="#0f172a" stroke="#0f172a" strokeWidth={0.7} />
+      <rect x={barX + qW} y={barY} width={qW} height={7} fill="#ffffff" stroke="#0f172a" strokeWidth={0.7} />
+      <rect x={barX + qW * 2} y={barY} width={qW * 2} height={7} fill="#0f172a" stroke="#0f172a" strokeWidth={0.7} />
 
-      {/* Attribution & Dwg Ref */}
-      <text x={barX} y={cy + 39} fontSize={6.5} fill="#475569">
+      <text x={barX} y={cy + 38} fontSize={6.5} fill="#475569">
         Sources: Esri, TomTom, Garmin, FAO, NOAA, USGS, OpenStreetMap contributors
-      </text>
-      <text x={barX} y={cy + 49} fontSize={6.8} fontWeight="700" fill="#1e3a8a">
-        {sheetLabel} | {settingsDwg} | Contractor Rep: {contractorRep}
       </text>
     </g>
   );
@@ -470,8 +620,8 @@ function renderGraticuleTicks(vp: ProjectedViewport) {
   const latMax = yToLat(vp.minY);
   const latMin = yToLat(vp.maxY);
 
-  const lonFracs = [0.14, 0.38, 0.62, 0.86];
-  const latFracs = [0.16, 0.42, 0.68, 0.88];
+  const lonFracs = [0.16, 0.48, 0.82];
+  const latFracs = [0.14, 0.38, 0.62, 0.86];
 
   return (
     <g>
@@ -483,7 +633,7 @@ function renderGraticuleTicks(vp: ProjectedViewport) {
           <g key={`lon-${i}`}>
             <line x1={px} y1={my - 5} x2={px} y2={my} stroke="#1e293b" strokeWidth={1.0} />
             <line x1={px} y1={my + mh} x2={px} y2={my + mh + 5} stroke="#1e293b" strokeWidth={1.0} />
-            <text x={px} y={my + mh + 15} textAnchor="middle" fontSize={8.2} fontWeight="600" fill="#334155">
+            <text x={px} y={my + mh + 16} textAnchor="middle" fontSize={8.2} fontWeight="600" fill="#334155">
               {lbl}
             </text>
           </g>
@@ -580,7 +730,6 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
   const { x: mapX, y: mapY, w: mapW, h: mapH, padRatio, tileOutW, tileOutH } =
     FULL_MAP_FRAME;
 
-  // Build projected viewport strictly per map kind
   const viewport = useMemo(() => {
     if (kind === 'wa-map') {
       return buildGeoViewport(
@@ -593,7 +742,11 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
       );
     }
     if (kind === 'wb-map') {
-      return buildGeoViewport(wbData.nodes, mapX, mapY, mapW, mapH, padRatio);
+      return buildGeoViewport(wbData.nodes, mapX,
+        mapY,
+        mapW,
+        mapH,
+        padRatio);
     }
     return buildGeoViewport(wcData.geoNodes, mapX, mapY, mapW, mapH, padRatio);
   }, [kind, wbData.nodes, wcData.geoNodes, mapX, mapY, mapW, mapH, padRatio]);
@@ -614,7 +767,6 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
     y1: mapY + mapH - 6,
   };
 
-  // Title & Header texts matching WA-WB-Construction-progress-15nov.pdf
   const mapTitle =
     kind === 'wa-map'
       ? 'Construction Progress Map: WA Shaft, Micro-Tunneling & Manhole'
@@ -624,35 +776,35 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
 
   const sheetNoLabel =
     kind === 'wa-map'
-      ? 'Sheet 2 of 5 (A1)'
+      ? 'Sheet 2 of 5 (A1 Portrait)'
       : kind === 'wb-map'
-      ? 'Sheet 3 of 5 (A1)'
-      : 'Sheet 4 of 5 (A1)';
+      ? 'Sheet 3 of 5 (A1 Portrait)'
+      : 'Sheet 4 of 5 (A1 Portrait)';
 
   const periodText =
     viewMode === 'weekly'
-      ? `WEEKLY COMPARISON: ${file1Label} -> ${file2Label}`
+      ? `WEEKLY COMPARE: ${file1Label} -> ${file2Label}`
       : viewMode === 'monthly'
-      ? `MONTHLY COMPARISON: ${file1Label} -> ${file2Label}`
+      ? `MONTHLY COMPARE: ${file1Label} -> ${file2Label}`
       : 'OVERALL CONSTRUCTION STATUS';
 
   const wbPrevCompletedM =
     viewMode === 'overall' ? undefined : baseline.wbCompletedLengthM;
 
-  // Reserved regions (Legend card, Compass rose, Scale bar) so node/landmark labels NEVER collide with UI cards
+  // Reserved Legend, Compass, and Scale Bar areas in Portrait layout (1100 x 1566)
   const legendBox: RectBox =
     kind === 'wb-map'
-      ? { x0: mapX + 12, y0: mapY + 124, x1: mapX + 332, y1: mapY + 465 }
-      : { x0: mapX + 12, y0: mapY + mapH - 472, x1: mapX + 356, y1: mapY + mapH - 12 };
+      ? { x0: mapX + 14, y0: mapY + 124, x1: mapX + 344, y1: mapY + 462 }
+      : { x0: mapX + 14, y0: mapY + mapH - 488, x1: mapX + 368, y1: mapY + mapH - 14 };
 
   const compassBox: RectBox =
     kind === 'wb-map'
-      ? { x0: mapX + 20, y0: mapY + 14, x1: mapX + 135, y1: mapY + 116 }
-      : { x0: mapX + mapW - 115, y0: mapY + 12, x1: mapX + mapW - 10, y1: mapY + 112 };
+      ? { x0: mapX + 18, y0: mapY + 14, x1: mapX + 132, y1: mapY + 114 }
+      : { x0: mapX + mapW - 114, y0: mapY + 14, x1: mapX + mapW - 10, y1: mapY + 114 };
 
   const scaleBox: RectBox = {
-    x0: mapX + mapW - 390,
-    y0: mapY + mapH - 68,
+    x0: mapX + mapW - 360,
+    y0: mapY + mapH - 60,
     x1: mapX + mapW - 8,
     y1: mapY + mapH - 8,
   };
@@ -670,48 +822,47 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
         </clipPath>
       </defs>
 
-      {/* Outer ISO A1 Landscape Page Background & Sheet Border */}
+      {/* Outer ISO A1 Portrait Page Background & Border */}
       <rect x={0} y={0} width={SHEET_W} height={SHEET_H} fill="#ffffff" />
       <rect x={12} y={12} width={SHEET_W - 24} height={SHEET_H - 24} fill="none" stroke="#0f172a" strokeWidth={1.3} />
 
       {/* Top Cartographic Title Banner */}
-      <rect x={16} y={16} width={SHEET_W - 32} height={52} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={0.7} />
+      <rect x={16} y={16} width={SHEET_W - 32} height={54} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={0.7} />
 
-      <text x={32} y={36} fontSize={9.5} fontWeight="700" fill="#1e3a8a">
+      <text x={28} y={35} fontSize={9.0} fontWeight="700" fill="#1e3a8a">
         {sheetNoLabel}
       </text>
-      <text x={32} y={50} fontSize={8.2} fontWeight="600" fill="#475569">
+      <text x={28} y={49} fontSize={7.6} fontWeight="600" fill="#475569">
         {settings.drawingNo} ({settings.revision})
       </text>
 
-      <text x={675} y={36} textAnchor="middle" fontSize={18.0} fontWeight="700" fill="#0f172a">
+      <text x={468} y={35} textAnchor="middle" fontSize={14.4} fontWeight="800" fill="#0f172a">
         {mapTitle}
       </text>
-      <text x={675} y={55} textAnchor="middle" fontSize={10.8} fontWeight="600" fill="#334155">
-        Dhaka Sanitation Improvement Project (DSIP) | {settings.sectionTitle} — As of {formatDateDisplay(settings.reportDate)}
+      <text x={468} y={53} textAnchor="middle" fontSize={9.0} fontWeight="600" fill="#334155">
+        Dhaka Sanitation Improvement Project (DSIP) | Package WD-02 — As of {formatDateDisplay(settings.reportDate)}
       </text>
 
       <rect
-        x={SHEET_W - 552}
+        x={SHEET_W - 418}
         y={23}
-        width={526}
-        height={36}
+        width={390}
+        height={38}
         rx={4}
         fill={viewMode === 'weekly' ? '#fffbeb' : viewMode === 'monthly' ? '#ecfeff' : '#f0fdf4'}
         stroke={viewMode === 'weekly' ? '#d97706' : viewMode === 'monthly' ? '#0891b2' : '#16a34a'}
         strokeWidth={1.0}
       />
-      <text x={SHEET_W - 289} y={39} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#0f172a">
-        {periodText}
+      <text x={SHEET_W - 223} y={39} textAnchor="middle" fontSize={7.1} fontWeight="700" fill="#0f172a">
+        {trunc(periodText, 68)}
       </text>
-      <text x={SHEET_W - 289} y={52} textAnchor="middle" fontSize={7.0} fontWeight="600" fill="#475569">
+      <text x={SHEET_W - 223} y={52} textAnchor="middle" fontSize={6.7} fontWeight="600" fill="#475569">
         Client: {settings.clientName} | {settings.contractorName}
       </text>
 
       {/* Geographic Neatline & Lat/Lon Graticule Ticks */}
       {renderGraticuleTicks(viewport)}
 
-      {/* Map Canvas Background */}
       <rect x={mapX} y={mapY} width={mapW} height={mapH} fill="#f1f5f9" />
 
       {/* CLIPPED MAP INTERIOR */}
@@ -741,7 +892,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
         )}
 
         {/* ================================================================ */}
-        {/* PAGE 2: WA PROGRESS MAP                                          */}
+        {/* PAGE 2: WA PROGRESS MAP (PORTRAIT)                               */}
         {/* ================================================================ */}
         {kind === 'wa-map' && (() => {
           const shaftById = new Map<string, ShaftRecord>();
@@ -751,64 +902,46 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
           const geoById = new Map(INITIAL_WA_GEO_NODES.map((g) => [g.id, g]));
           const spsPt = viewport.project(GOLAPBAG_SPS_COORD.lat, GOLAPBAG_SPS_COORD.lon);
 
-          // Pre-register every WA square node marker & SPS box in occupied so labels NEVER overlap markers!
+          // Pre-seed WA square markers + SPS marker
           for (const gNode of INITIAL_WA_GEO_NODES) {
             const p = viewport.project(gNode.lat, gNode.lon);
             occupied.push({ x0: p.x - 9, y0: p.y - 9, x1: p.x + 9, y1: p.y + 9 });
           }
           occupied.push({
-            x0: spsPt.x - 14,
-            y0: spsPt.y - 14,
-            x1: spsPt.x + 14,
-            y1: spsPt.y + 14,
+            x0: spsPt.x - 16,
+            y0: spsPt.y - 16,
+            x1: spsPt.x + 16,
+            y1: spsPt.y + 16,
           });
 
-          // Administrative Zone annotations inspired by WA_WB_WC_Map.pdf (Page 2)
-          const zonePtDncc = viewport.project(23.7568, 90.4152);
-          const zonePtDscc = viewport.project(23.7398, 90.4310);
+          const zonePtDncc = viewport.project(23.7545, 90.4150);
+          const zonePtDscc = viewport.project(23.7418, 90.4272);
 
-          // Landmarks from WA_WB_WC_Map.pdf mapped to exact WA corridor reference nodes
           const waLandmarks: Array<{
             nodeId: string;
             label: string;
-            side: 'left' | 'right' | 'top';
+            side: 'left' | 'right';
+            dx: number;
+            dy: number;
           }> = [
-            { nodeId: 'WA-1', label: 'Mirbag (Start WA-01)', side: 'left' },
-            { nodeId: 'WA-12', label: 'Moulovirtek (Rampura)', side: 'left' },
-            { nodeId: 'WA-14', label: 'Sipahibag Moor', side: 'right' },
-            { nodeId: 'WA-18', label: 'Goran Tempo Stand', side: 'left' },
-            { nodeId: 'WA-22', label: 'East Bashaboo', side: 'left' },
-            { nodeId: 'WA-23', label: 'Chayabithy', side: 'right' },
-            { nodeId: 'WA-27', label: 'North Mugdapara', side: 'right' },
-            { nodeId: 'WA-28', label: 'Mugdapara-Maniknogor Bridge', side: 'left' },
-            { nodeId: 'WA-35', label: 'City Corp. Adarsha School', side: 'left' },
+            { nodeId: 'WA-1', label: 'Mirbag (Start WA-01)', side: 'left', dx: -175, dy: 42 },
+            { nodeId: 'WA-12', label: 'Moulovirtek (Rampura)', side: 'left', dx: -215, dy: 24 },
+            { nodeId: 'WA-14', label: 'Sipahibag Moor', side: 'right', dx: 78, dy: -4 },
+            { nodeId: 'WA-18', label: 'Goran Tempo Stand', side: 'left', dx: -190, dy: 0 },
+            { nodeId: 'WA-22', label: 'East Bashaboo', side: 'left', dx: -165, dy: 0 },
+            { nodeId: 'WA-23', label: 'Chayabithy', side: 'right', dx: 76, dy: 0 },
+            { nodeId: 'WA-27', label: 'North Mugdapara', side: 'right', dx: 76, dy: -4 },
+            { nodeId: 'WA-28', label: 'Mugdapara-Maniknogor Bridge', side: 'left', dx: -250, dy: 4 },
+            { nodeId: 'WA-35', label: 'City Corp. Adarsha High School', side: 'left', dx: -245, dy: -8 },
           ];
 
           return (
             <g>
-              {/* Zone Context Watermark Badges */}
-              <HaloText
-                x={zonePtDncc.x - 16}
-                y={zonePtDncc.y + 40}
-                text="DNCC ZONE 03"
-                fontSize={12}
-                fontWeight="800"
-                fill="#475569"
-                haloWidth={4}
-                textAnchor="middle"
-              />
-              <HaloText
-                x={zonePtDscc.x - 82}
-                y={zonePtDscc.y}
-                text="DSCC ZONE 02"
-                fontSize={12}
-                fontWeight="800"
-                fill="#475569"
-                haloWidth={4}
-                textAnchor="middle"
-              />
+              {/* Highlighted Administrative Zone Badges */}
+              {renderZoneBadge(zonePtDncc.x, zonePtDncc.y, 'DNCC ZONE 03', 'dncc', occupied)}
+              {renderZoneBadge(zonePtDscc.x, zonePtDscc.y, 'DSCC ZONE 02', 'dscc', occupied)}
 
-              {/* Micro-tunneling alignment lines WA-i -> WA-(i+1) & WA-36 -> SPS */}
+              {/* Micro-tunneling segments WA-i -> WA-(i+1) & WA-36 -> SPS */}
               {INITIAL_WA_GEO_NODES.map((gNode, idx) => {
                 const p1 = viewport.project(gNode.lat, gNode.lon);
                 const nextGeo =
@@ -825,24 +958,8 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
 
                 return (
                   <g key={`wa-seg-${gNode.id}`}>
-                    <line
-                      x1={p1.x}
-                      y1={p1.y}
-                      x2={p2.x}
-                      y2={p2.y}
-                      stroke="#ffffff"
-                      strokeWidth={7.8}
-                      strokeLinecap="round"
-                    />
-                    <line
-                      x1={p1.x}
-                      y1={p1.y}
-                      x2={p2.x}
-                      y2={p2.y}
-                      stroke={col}
-                      strokeWidth={4.8}
-                      strokeLinecap="round"
-                    />
+                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#ffffff" strokeWidth={8.0} strokeLinecap="round" />
+                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={col} strokeWidth={5.0} strokeLinecap="round" />
                     {viewMode !== 'overall' && deltaInfo.hasNewTunnel && (
                       <line
                         x1={p1.x}
@@ -850,7 +967,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                         x2={p2.x}
                         y2={p2.y}
                         stroke={GIS_HIGHLIGHT}
-                        strokeWidth={2.4}
+                        strokeWidth={2.5}
                         strokeDasharray="6,4"
                         strokeLinecap="round"
                       />
@@ -859,19 +976,49 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                 );
               })}
 
-              {/* Golapbag SPS Building Box Marker (pink/green box like reference PDF) */}
+              {/* Highlighted Arrow Callouts rendered FIRST so node labels avoid arrows & badges cleanly */}
+              {waLandmarks.map((lm) => {
+                const g = geoById.get(lm.nodeId);
+                if (!g) return null;
+                const pt = viewport.project(g.lat, g.lon);
+                return renderHighlightedCallout(pt.x, pt.y, lm.label, occupied, mapBounds, {
+                  key: `wa-lm-${lm.nodeId}`,
+                  preferredSide: lm.side,
+                  baseOffsetX: lm.dx,
+                  baseOffsetY: lm.dy,
+                  fontSize: 11.2,
+                  bgFill: '#fffbeb',
+                  borderStroke: '#b45309',
+                  arrowStroke: '#b45309',
+                });
+              })}
+
+              {/* Prominent Highlighted Golapbag SPS Callout */}
+              {renderHighlightedCallout(spsPt.x, spsPt.y, 'Golapbag Pump Station (SPS)', occupied, mapBounds, {
+                key: 'wa-sps-callout',
+                preferredSide: 'left',
+                baseOffsetX: -240,
+                baseOffsetY: 36,
+                fontSize: 11.8,
+                bgFill: '#fdf2f8',
+                borderStroke: '#9d174d',
+                textFill: '#831843',
+                arrowStroke: '#9d174d',
+              })}
+
+              {/* Golapbag SPS Building Box Marker */}
               <g>
                 <rect
-                  x={spsPt.x - 13}
-                  y={spsPt.y - 13}
-                  width={26}
-                  height={26}
-                  rx={2}
+                  x={spsPt.x - 14}
+                  y={spsPt.y - 14}
+                  width={28}
+                  height={28}
+                  rx={3}
                   fill="#fbcfe8"
                   stroke="#9d174d"
-                  strokeWidth={2.2}
+                  strokeWidth={2.4}
                 />
-                <text x={spsPt.x} y={spsPt.y + 3.2} textAnchor="middle" fontSize={7.5} fontWeight="800" fill="#831843">
+                <text x={spsPt.x} y={spsPt.y + 3.5} textAnchor="middle" fontSize={8.2} fontWeight="800" fill="#831843">
                   SPS
                 </text>
               </g>
@@ -887,7 +1034,6 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                 const isSel = selectedShaftId === gNode.id;
 
                 const outerCol = statusStroke(shStatus);
-                // Inner circle dot: Green if MH Complete (Cast & Ring 100%), Blue if Cast complete or MH ongoing, Red if Remaining
                 const innerCol =
                   mhStatus === 'complete'
                     ? GIS_GREEN
@@ -899,9 +1045,13 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   ? getDeltaProgressBadge(sh, baseline.shafts[sh.id])
                   : { hasNewLayer: false, hasNewMh: false, hasNewTunnel: false };
 
-                // Directional hint matching WA's curve for ultra-clean spacing
+                const lmMatch = waLandmarks.find((l) => l.nodeId === gNode.id);
                 const prefSide: 'left' | 'right' | 'top' =
-                  idx <= 5
+                  lmMatch
+                    ? lmMatch.side === 'right'
+                      ? 'left'
+                      : 'right'
+                    : idx <= 5
                     ? idx % 2 === 0
                       ? 'top'
                       : 'right'
@@ -918,11 +1068,11 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   pt.x,
                   pt.y,
                   dispName,
-                  8.5,
+                  8.8,
                   occupied,
                   mapBounds,
                   prefSide,
-                  9
+                  9.5
                 );
 
                 return (
@@ -932,162 +1082,67 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                     onClick={() => onSelectShaft?.(gNode.id, 'shaft')}
                   >
                     {viewMode !== 'overall' && (deltaInfo.hasNewLayer || deltaInfo.hasNewMh) && (
-                      <rect
-                        x={pt.x - 10.5}
-                        y={pt.y - 10.5}
-                        width={21}
-                        height={21}
-                        rx={3}
-                        fill="none"
-                        stroke={GIS_HIGHLIGHT}
-                        strokeWidth={2.0}
-                      />
+                      <rect x={pt.x - 11} y={pt.y - 11} width={22} height={22} rx={3} fill="none" stroke={GIS_HIGHLIGHT} strokeWidth={2.0} />
                     )}
                     {isSel && (
-                      <rect
-                        x={pt.x - 11.5}
-                        y={pt.y - 11.5}
-                        width={23}
-                        height={23}
-                        rx={3}
-                        fill="none"
-                        stroke="#0284c7"
-                        strokeWidth={2.2}
-                      />
+                      <rect x={pt.x - 12} y={pt.y - 12} width={24} height={24} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
                     )}
 
-                    {/* Outer Square = Shaft Status (matching 15nov_p1.png) */}
                     <rect
-                      x={pt.x - 7.5}
-                      y={pt.y - 7.5}
-                      width={15}
-                      height={15}
+                      x={pt.x - 7.8}
+                      y={pt.y - 7.8}
+                      width={15.6}
+                      height={15.6}
                       fill="#ffffff"
                       stroke={outerCol}
-                      strokeWidth={2.5}
+                      strokeWidth={2.6}
                     />
-                    {/* Inner Circle Dot = Manhole Status (matching 15nov_p1.png) */}
                     <circle
                       cx={pt.x}
                       cy={pt.y}
-                      r={4.0}
+                      r={4.2}
                       fill={innerCol}
                       stroke={ringSt === 'ongoing' ? '#0ea5e9' : '#ffffff'}
                       strokeWidth={0.9}
                     />
 
                     {lblPos.leaderNeeded && (
-                      <line
-                        x1={pt.x}
-                        y1={pt.y}
-                        x2={lblPos.x}
-                        y2={lblPos.y - 2}
-                        stroke="#475569"
-                        strokeWidth={0.7}
-                      />
+                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.75} />
                     )}
                     <HaloText
                       x={lblPos.x}
                       y={lblPos.y}
                       text={dispName}
-                      fontSize={8.5}
+                      fontSize={8.8}
                       fontWeight="700"
                       fill="#0f172a"
-                      haloWidth={3.2}
+                      haloWidth={3.3}
                       textAnchor={lblPos.anchor}
                     />
                   </g>
                 );
               })}
 
-              {/* Extra Reference Landmark Callouts (from WA_WB_WC_Map.pdf) */}
-              {waLandmarks.map((lm) => {
-                const g = geoById.get(lm.nodeId);
-                if (!g) return null;
-                const pt = viewport.project(g.lat, g.lon);
-                const offX = lm.side === 'right' ? 68 : -68;
-                const pos = resolveSmartLabel(
-                  pt.x + offX,
-                  pt.y,
-                  lm.label,
-                  7.8,
-                  occupied,
-                  mapBounds,
-                  lm.side === 'right' ? 'right' : 'left',
-                  4
-                );
-                return (
-                  <g key={`wa-lm-${lm.nodeId}`}>
-                    <line
-                      x1={pt.x}
-                      y1={pt.y}
-                      x2={pos.x}
-                      y2={pos.y - 2}
-                      stroke="#64748b"
-                      strokeWidth={0.65}
-                      strokeDasharray="2,2"
-                    />
-                    <HaloText
-                      x={pos.x}
-                      y={pos.y}
-                      text={lm.label}
-                      fontSize={7.8}
-                      fontWeight="600"
-                      fontStyle="italic"
-                      fill="#334155"
-                      haloWidth={2.8}
-                      textAnchor={pos.anchor}
-                    />
-                  </g>
-                );
-              })}
-
-              {/* Prominent Golapbag SPS Label (placed smartly to avoid WA 36 & scale card) */}
-              {(() => {
-                const spsLblPos = resolveSmartLabel(
-                  spsPt.x,
-                  spsPt.y,
-                  'Golapbag Pump Station (SPS)',
-                  9.2,
-                  occupied,
-                  mapBounds,
-                  'right',
-                  16
-                );
-                return (
-                  <HaloText
-                    x={spsLblPos.x}
-                    y={spsLblPos.y}
-                    text="Golapbag Pump Station (SPS)"
-                    fontSize={9.2}
-                    fontWeight="800"
-                    fill="#831843"
-                    haloWidth={3.5}
-                    textAnchor={spsLblPos.anchor}
-                  />
-                );
-              })()}
-
-              {/* WA Bottom-Left Frosted Legend & Summary Card (exact 15nov_p1.png style + v7 Cast/Ring breakdown) */}
+              {/* WA Bottom-Left Frosted Legend & Quantitative Table */}
               <g transform={`translate(${legendBox.x0}, ${legendBox.y0})`}>
+                <rect x={2} y={3} width={354} height={474} rx={5} fill="#0f172a" fillOpacity={0.1} />
                 <rect
                   x={0}
                   y={0}
-                  width={344}
-                  height={460}
-                  rx={4}
+                  width={354}
+                  height={474}
+                  rx={5}
                   fill="#ffffff"
-                  fillOpacity={0.94}
+                  fillOpacity={0.95}
                   stroke="#1e293b"
-                  strokeWidth={1.1}
+                  strokeWidth={1.2}
                 />
-                <rect x={0} y={0} width={344} height={28} rx={4} fill="#eff6ff" stroke="#1e293b" strokeWidth={0.8} />
-                <text x={14} y={19} fontSize={12.5} fontWeight="800" fill="#0f172a">
+                <rect x={0} y={0} width={354} height={29} rx={5} fill="#eff6ff" stroke="#1e293b" strokeWidth={0.9} />
+                <text x={14} y={19.5} fontSize={12.8} fontWeight="800" fill="#0f172a">
                   Legend — WA Section Progress
                 </text>
 
-                {/* Shaft Status */}
-                <text x={14} y={48} fontSize={9.8} fontWeight="700" fill="#1e3a8a">
+                <text x={14} y={48} fontSize={10.0} fontWeight="700" fill="#1e3a8a">
                   Shaft Status ({waSummary.totalShafts} Shafts)
                 </text>
                 {[
@@ -1096,15 +1151,14 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   { label: `Remaining (${waSummary.remainingShafts})`, color: GIS_RED, y: 100 },
                 ].map((it) => (
                   <g key={it.label}>
-                    <rect x={16} y={it.y} width={14} height={14} fill="#ffffff" stroke={it.color} strokeWidth={2.4} />
-                    <text x={40} y={it.y + 11} fontSize={9.0} fontWeight="600" fill="#0f172a">
+                    <rect x={16} y={it.y} width={14} height={14} fill="#ffffff" stroke={it.color} strokeWidth={2.5} />
+                    <text x={40} y={it.y + 11} fontSize={9.2} fontWeight="600" fill="#0f172a">
                       {it.label}
                     </text>
                   </g>
                 ))}
 
-                {/* Manhole Status */}
-                <text x={14} y={136} fontSize={9.8} fontWeight="700" fill="#1e3a8a">
+                <text x={14} y={136} fontSize={10.0} fontWeight="700" fill="#1e3a8a">
                   Manhole Status ({waSummary.totalManholes} Nos)
                 </text>
                 {[
@@ -1112,96 +1166,92 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   {
                     label: `Cast Done / On-Going (${Math.max(0, waSummary.castingCompleteCount + waSummary.castingOngoingCount - waSummary.completedManholes)})`,
                     color: GIS_BLUE,
-                    y: 165,
+                    y: 166,
                   },
-                  { label: `Remaining (${waSummary.castingRemainingCount})`, color: GIS_RED, y: 184 },
+                  { label: `Remaining (${waSummary.castingRemainingCount})`, color: GIS_RED, y: 186 },
                 ].map((it) => (
                   <g key={it.label}>
-                    <circle cx={23} cy={it.y + 6} r={5.2} fill={it.color} stroke="#ffffff" strokeWidth={0.8} />
-                    <text x={40} y={it.y + 9.5} fontSize={8.7} fontWeight="600" fill="#0f172a">
+                    <circle cx={23} cy={it.y + 6} r={5.4} fill={it.color} stroke="#ffffff" strokeWidth={0.8} />
+                    <text x={40} y={it.y + 9.5} fontSize={8.8} fontWeight="600" fill="#0f172a">
                       {it.label}
                     </text>
                   </g>
                 ))}
-                <text x={16} y={208} fontSize={8.0} fontWeight="700" fill="#1d4ed8">
+                <text x={16} y={210} fontSize={8.2} fontWeight="700" fill="#1d4ed8">
                   Cast: {waSummary.castingCompleteCount} Done | {waSummary.castingOngoingCount} Ong | {waSummary.castingRemainingCount} Rem
                 </text>
-                <text x={16} y={222} fontSize={8.0} fontWeight="700" fill="#0284c7">
+                <text x={16} y={225} fontSize={8.2} fontWeight="700" fill="#0284c7">
                   Ring: {waSummary.precastCompleteCount} Done | {waSummary.precastOngoingCount} Ong | {waSummary.precastRemainingCount} Rem
                 </text>
 
-                {/* Micro-Tunneling Status */}
-                <text x={14} y={244} fontSize={9.8} fontWeight="700" fill="#1e3a8a">
+                <text x={14} y={248} fontSize={10.0} fontWeight="700" fill="#1e3a8a">
                   Micro-Tunneling Status
                 </text>
                 {[
-                  { label: 'Complete', color: GIS_GREEN, y: 256 },
-                  { label: 'On-Going', color: GIS_BLUE, y: 274 },
-                  { label: 'Remaining', color: GIS_RED, y: 292 },
+                  { label: 'Complete', color: GIS_GREEN, y: 260 },
+                  { label: 'On-Going', color: GIS_BLUE, y: 279 },
+                  { label: 'Remaining', color: GIS_RED, y: 298 },
                 ].map((it) => (
                   <g key={it.label}>
-                    <line x1={16} y1={it.y + 4} x2={44} y2={it.y + 4} stroke={it.color} strokeWidth={4.2} strokeLinecap="round" />
-                    <text x={54} y={it.y + 7.5} fontSize={8.8} fontWeight="600" fill="#0f172a">
+                    <line x1={16} y1={it.y + 4} x2={44} y2={it.y + 4} stroke={it.color} strokeWidth={4.4} strokeLinecap="round" />
+                    <text x={54} y={it.y + 7.5} fontSize={9.0} fontWeight="600" fill="#0f172a">
                       {it.label}
                     </text>
                   </g>
                 ))}
 
-                {/* SPS Key Marker */}
-                <rect x={198} y={254} width={14} height={14} fill="#fbcfe8" stroke="#9d174d" strokeWidth={1.6} />
-                <text x={218} y={265} fontSize={8.5} fontWeight="700" fill="#831843">
+                <rect x={202} y={258} width={15} height={15} fill="#fbcfe8" stroke="#9d174d" strokeWidth={1.8} />
+                <text x={224} y={269} fontSize={8.8} fontWeight="700" fill="#831843">
                   Golapbag SPS
                 </text>
                 {viewMode !== 'overall' && (
                   <g>
-                    <line x1={196} y1={282} x2={216} y2={282} stroke={GIS_HIGHLIGHT} strokeWidth={3.2} strokeDasharray="4,2" />
-                    <text x={221} y={285} fontSize={8.0} fontWeight="700" fill="#b45309">
-                      New Update ({file2Label})
+                    <line x1={200} y1={288} x2={220} y2={288} stroke={GIS_HIGHLIGHT} strokeWidth={3.4} strokeDasharray="4,2" />
+                    <text x={225} y={291} fontSize={8.2} fontWeight="700" fill="#b45309">
+                      New ({file2Label})
                     </text>
                   </g>
                 )}
 
-                <line x1={12} y1={310} x2={332} y2={310} stroke="#cbd5e1" strokeWidth={0.9} />
+                <line x1={12} y1={317} x2={342} y2={317} stroke="#cbd5e1" strokeWidth={0.9} />
 
-                {/* Quantitative Pipe Lengths Table matching 15nov_p1.png */}
-                <text x={14} y={328} fontSize={9.2} fontWeight="800" fill="#0f172a">
+                <text x={14} y={336} fontSize={9.5} fontWeight="800" fill="#0f172a">
                   TOTAL LENGTH
                 </text>
-                <text x={330} y={328} textAnchor="end" fontSize={9.2} fontWeight="800" fill="#0f172a">
+                <text x={340} y={336} textAnchor="end" fontSize={9.5} fontWeight="800" fill="#0f172a">
                   : {(waSummary.totalTunnelLengthM / 1000).toFixed(3)} km
                 </text>
-                <text x={14} y={345} fontSize={9.2} fontWeight="800" fill="#15803d">
+                <text x={14} y={354} fontSize={9.5} fontWeight="800" fill="#15803d">
                   COMPLETED LENGTH
                 </text>
-                <text x={330} y={345} textAnchor="end" fontSize={9.2} fontWeight="800" fill="#15803d">
+                <text x={340} y={354} textAnchor="end" fontSize={9.5} fontWeight="800" fill="#15803d">
                   : {(waSummary.completedTunnelLengthM / 1000).toFixed(3)} km ({waSummary.tunnelPctOverall.toFixed(1)}%)
                 </text>
 
-                <text x={14} y={365} fontSize={8.6} fontWeight="700" fill="#334155">
+                <text x={14} y={375} fontSize={8.8} fontWeight="700" fill="#334155">
                   1. DN 900 ({(waSummary.byDia.DN900.totalM / 1000).toFixed(3)} km)
                 </text>
-                <text x={330} y={365} textAnchor="end" fontSize={8.6} fontWeight="700" fill="#0f172a">
+                <text x={340} y={375} textAnchor="end" fontSize={8.8} fontWeight="700" fill="#0f172a">
                   Done: {(waSummary.byDia.DN900.completedM / 1000).toFixed(3)} km
                 </text>
-                <text x={14} y={381} fontSize={8.6} fontWeight="700" fill="#334155">
+                <text x={14} y={392} fontSize={8.8} fontWeight="700" fill="#334155">
                   2. DN 1100 ({(waSummary.byDia.DN1100.totalM / 1000).toFixed(3)} km)
                 </text>
-                <text x={330} y={381} textAnchor="end" fontSize={8.6} fontWeight="700" fill="#0f172a">
+                <text x={340} y={392} textAnchor="end" fontSize={8.8} fontWeight="700" fill="#0f172a">
                   Done: {(waSummary.byDia.DN1100.completedM / 1000).toFixed(3)} km
                 </text>
-                <text x={14} y={397} fontSize={8.6} fontWeight="700" fill="#334155">
+                <text x={14} y={409} fontSize={8.8} fontWeight="700" fill="#334155">
                   3. DN 1600 ({(waSummary.byDia.DN1600.totalM / 1000).toFixed(3)} km)
                 </text>
-                <text x={330} y={397} textAnchor="end" fontSize={8.6} fontWeight="700" fill="#0f172a">
+                <text x={340} y={409} textAnchor="end" fontSize={8.8} fontWeight="700" fill="#0f172a">
                   Done: {(waSummary.byDia.DN1600.completedM / 1000).toFixed(3)} km
                 </text>
 
-                {/* Golapbag SPS Status Pill */}
-                <rect x={12} y={409} width={320} height={42} rx={3} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.8} />
-                <text x={20} y={425} fontSize={8.2} fontWeight="700" fill="#166534">
+                <rect x={12} y={421} width={330} height={43} rx={3} fill="#f0fdf4" stroke="#16a34a" strokeWidth={0.9} />
+                <text x={20} y={437} fontSize={8.4} fontWeight="700" fill="#166534">
                   Golapbag SPS: {pumpStation.layers.filter((l) => l.status === 'complete').length}/5 Lower (Cast: {pumpStation.castingCompleteM}m) | Room: {pumpStation.machineRoom.status.toUpperCase()}
                 </text>
-                <text x={20} y={441} fontSize={8.2} fontWeight="700" fill="#0f766e">
+                <text x={20} y={454} fontSize={8.4} fontWeight="700" fill="#0f766e">
                   Sinking: {pumpStation.sinkingCompletedM}m / {pumpStation.totalHeightM}m [{pumpStation.sinkingStatus.toUpperCase()}
                   {pumpStation.sinkingStatus !== 'complete'
                     ? ` | Rem: ${Math.max(0, Number((pumpStation.totalHeightM - pumpStation.sinkingCompletedM).toFixed(2)))}m`
@@ -1209,13 +1259,13 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                 </text>
               </g>
 
-              {renderCompassRose(mapX + mapW - 60, mapY + 60, 34)}
+              {renderCompassRose(mapX + mapW - 60, mapY + 62, 34)}
             </g>
           );
         })()}
 
         {/* ================================================================ */}
-        {/* PAGE 3: WB PROGRESS MAP                                          */}
+        {/* PAGE 3: WB PROGRESS MAP (PORTRAIT)                               */}
         {/* ================================================================ */}
         {kind === 'wb-map' && (() => {
           const split = computeWbPolylineSplit(
@@ -1233,9 +1283,6 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
               .join(' ');
 
           const tipPt = viewport.project(split.tipPoint.lat, split.tipPoint.lon);
-          const doneCount = wbData.nodes.filter((n) => n.status === 'complete').length;
-          const ongCount = wbData.nodes.filter((n) => n.status === 'ongoing').length;
-          const remCount = wbData.nodes.length - doneCount - ongCount;
           const wbRemM = Math.max(0, wbData.totalLengthM - wbData.completedLengthM);
           const wbPct = wbData.totalLengthM > 0 ? (wbData.completedLengthM / wbData.totalLengthM) * 100 : 0;
 
@@ -1243,42 +1290,53 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
           const spsPt = viewport.project(wbData.nodes[0]?.lat ?? 23.719516, wbData.nodes[0]?.lon ?? 90.432657);
           const wbById = new Map(wbData.nodes.map((n) => [n.id, n]));
 
-          // Pre-register all WB squares, SPS box, and Done tip badge in occupied so labels NEVER overlap!
           for (const nd of wbData.nodes) {
             const p = viewport.project(nd.lat, nd.lon);
-            occupied.push({ x0: p.x - 7.5, y0: p.y - 7.5, x1: p.x + 7.5, y1: p.y + 7.5 });
+            occupied.push({ x0: p.x - 8, y0: p.y - 8, x1: p.x + 8, y1: p.y + 8 });
           }
           occupied.push({
-            x0: spsPt.x - 16,
-            y0: spsPt.y - 38,
-            x1: spsPt.x + 34,
+            x0: spsPt.x - 18,
+            y0: spsPt.y - 42,
+            x1: spsPt.x + 36,
             y1: spsPt.y - 14,
           });
-          // Tip badge sits cleanly to the RIGHT of tipPt (+26px) away from Dholpur/WB11
           occupied.push({
-            x0: tipPt.x + 18,
-            y0: tipPt.y - 11,
-            x1: tipPt.x + 110,
-            y1: tipPt.y + 11,
+            x0: tipPt.x + 20,
+            y0: tipPt.y - 12,
+            x1: tipPt.x + 122,
+            y1: tipPt.y + 12,
           });
 
-          // Special valve/infrastructure symbols & landmarks from WA_WB_WC_Map.pdf Page 3
           const washoutNode = wbById.get('WB12');
           const airValveNode = wbById.get('WB35');
           const juncNode = wbById.get('WB38');
 
+          // Reserve prominent Washout & Air Valve highlight rings in occupied
+          if (washoutNode) {
+            const wp = viewport.project(washoutNode.lat, washoutNode.lon);
+            occupied.push({ x0: wp.x - 42, y0: wp.y - 18, x1: wp.x - 8, y1: wp.y + 18 });
+          }
+          if (airValveNode) {
+            const ap = viewport.project(airValveNode.lat, airValveNode.lon);
+            occupied.push({ x0: ap.x - 16, y0: ap.y - 46, x1: ap.x + 16, y1: ap.y - 10 });
+          }
+
+          const wbZonePt = viewport.project(23.7145, 90.4272);
+
           const wbLandmarks: Array<{ id: string; label: string; dx: number; dy: number; side: 'left' | 'right' }> = [
-            { id: 'WB8', label: 'Dhalpur Notun Rasta', dx: 74, dy: -6, side: 'right' },
-            { id: 'WB17', label: 'Boubazar Road', dx: 68, dy: 4, side: 'right' },
-            { id: 'WB24', label: 'Mayor Hanif Flyover', dx: 72, dy: 12, side: 'right' },
-            { id: 'WB27', label: 'Ideal Road', dx: -68, dy: -16, side: 'left' },
-            { id: 'WB32', label: 'Doyagonj Bazar Road', dx: 18, dy: 34, side: 'right' },
-            { id: 'WB38', label: 'Doyagonj Chowrasta (Junc. WD2 & WD3)', dx: -24, dy: 28, side: 'left' },
+            { id: 'WB8', label: 'Dhalpur Notun Rasta', dx: 82, dy: -8, side: 'right' },
+            { id: 'WB17', label: 'Boubazar Road', dx: 78, dy: 4, side: 'right' },
+            { id: 'WB24', label: 'Mayor Hanif Flyover', dx: 82, dy: 28, side: 'right' },
+            { id: 'WB27', label: 'Ideal Road', dx: -158, dy: -46, side: 'left' },
+            { id: 'WB32', label: 'Doyagonj Bazar Road', dx: 26, dy: 52, side: 'right' },
+            { id: 'WB38', label: 'Doyagonj Chowrasta (Junc. WD2 & WD3)', dx: -20, dy: 56, side: 'right' },
           ];
 
           return (
             <g>
-              {/* Custom KML Overlays if present */}
+              {/* DSCC Zone Highlight Pill */}
+              {renderZoneBadge(wbZonePt.x, wbZonePt.y, 'DSCC ZONE 05', 'dscc', occupied)}
+
               {(wbData.customKmlLines || []).map((ln, li) => (
                 <polyline
                   key={`wb-kml-${li}`}
@@ -1298,84 +1356,134 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
               {/* Remaining Segment (RED) */}
               {split.remainingPoints.length >= 2 && (
                 <>
-                  <polyline points={toPts(split.remainingPoints)} fill="none" stroke="#ffffff" strokeWidth={8.0} strokeLinecap="round" strokeLinejoin="round" />
-                  <polyline points={toPts(split.remainingPoints)} fill="none" stroke={GIS_RED} strokeWidth={5.0} strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline points={toPts(split.remainingPoints)} fill="none" stroke="#ffffff" strokeWidth={8.5} strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline points={toPts(split.remainingPoints)} fill="none" stroke={GIS_RED} strokeWidth={5.2} strokeLinecap="round" strokeLinejoin="round" />
                 </>
               )}
 
               {/* Completed Segment (GREEN) */}
               {split.prevPoints.length >= 2 && (
                 <>
-                  <polyline points={toPts(split.prevPoints)} fill="none" stroke="#ffffff" strokeWidth={8.5} strokeLinecap="round" strokeLinejoin="round" />
-                  <polyline points={toPts(split.prevPoints)} fill="none" stroke={GIS_GREEN} strokeWidth={5.6} strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline points={toPts(split.prevPoints)} fill="none" stroke="#ffffff" strokeWidth={9.0} strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline points={toPts(split.prevPoints)} fill="none" stroke={GIS_GREEN} strokeWidth={5.8} strokeLinecap="round" strokeLinejoin="round" />
                 </>
               )}
 
-              {/* Comparison Added Segment Highlight */}
               {viewMode !== 'overall' && split.currPoints.length >= 2 && (
                 <polyline
                   points={toPts(split.currPoints)}
                   fill="none"
                   stroke={GIS_HIGHLIGHT}
-                  strokeWidth={6.0}
+                  strokeWidth={6.2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               )}
 
-              {/* Golapbag SPS Pink Box above WB1..WB4 (matching 15nov_p2.png without covering nodes) */}
+              {/* Golapbag SPS Pink Box */}
               <g>
                 <rect
-                  x={spsPt.x - 14}
-                  y={spsPt.y - 36}
-                  width={46}
-                  height={20}
-                  rx={2}
+                  x={spsPt.x - 16}
+                  y={spsPt.y - 38}
+                  width={48}
+                  height={22}
+                  rx={3}
                   fill="#fbcfe8"
                   stroke="#9d174d"
-                  strokeWidth={2.0}
+                  strokeWidth={2.2}
                 />
-                <text x={spsPt.x + 9} y={spsPt.y - 23} textAnchor="middle" fontSize={8.5} fontWeight="800" fill="#831843">
+                <text x={spsPt.x + 8} y={spsPt.y - 23} textAnchor="middle" fontSize={9.0} fontWeight="800" fill="#831843">
                   SPS
                 </text>
               </g>
 
-              {/* Washout & Air Valve Infrastructure Markers from WA_WB_WC_Map.pdf Page 3 */}
+              {/* LARGE HIGHLIGHTED WASHOUT & AIR VALVE MARKERS + BOLD ARROWS */}
               {washoutNode && (() => {
                 const wp = viewport.project(washoutNode.lat, washoutNode.lon);
-                const wPos = resolveSmartLabel(wp.x - 14, wp.y + 2, 'Washout', 7.8, occupied, mapBounds, 'left', 8);
+                const wx = wp.x - 24;
+                const wy = wp.y;
                 return (
                   <g>
-                    <polygon points={`${wp.x - 14},${wp.y - 8} ${wp.x - 20},${wp.y + 3} ${wp.x - 8},${wp.y + 3}`} fill="#16a34a" stroke="#ffffff" strokeWidth={1.2} />
-                    <HaloText x={wPos.x} y={wPos.y} text="Washout" fontSize={7.8} fontWeight="700" fill="#15803d" textAnchor={wPos.anchor} />
+                    <circle cx={wx} cy={wy} r={14} fill="#bbf7d0" fillOpacity={0.92} stroke="#15803d" strokeWidth={2.2} />
+                    <polygon points={`${wx},${wy - 9} ${wx - 8},${wy + 6} ${wx + 8},${wy + 6}`} fill="#16a34a" stroke="#ffffff" strokeWidth={1.2} />
+                    {renderHighlightedCallout(wx, wy, 'WASHOUT', occupied, mapBounds, {
+                      key: 'wb-washout-callout',
+                      preferredSide: 'left',
+                      baseOffsetX: -146,
+                      baseOffsetY: 0,
+                      fontSize: 11.4,
+                      bgFill: '#dcfce7',
+                      borderStroke: '#15803d',
+                      textFill: '#14532d',
+                      arrowStroke: '#15803d',
+                    })}
                   </g>
                 );
               })()}
               {airValveNode && (() => {
                 const ap = viewport.project(airValveNode.lat, airValveNode.lon);
-                const aPos = resolveSmartLabel(ap.x, ap.y - 16, 'Air Valve', 7.8, occupied, mapBounds, 'top', 8);
+                const ax = ap.x;
+                const ay = ap.y - 26;
                 return (
                   <g>
-                    <polygon points={`${ap.x},${ap.y - 20} ${ap.x - 6},${ap.y - 9} ${ap.x + 6},${ap.y - 9}`} fill="#0284c7" stroke="#ffffff" strokeWidth={1.2} />
-                    <HaloText x={aPos.x} y={aPos.y} text="Air Valve" fontSize={7.8} fontWeight="700" fill="#0369a1" textAnchor={aPos.anchor} />
+                    <circle cx={ax} cy={ay} r={14} fill="#bae6fd" fillOpacity={0.92} stroke="#0369a1" strokeWidth={2.2} />
+                    <polygon points={`${ax},${ay - 9} ${ax - 8},${ay + 6} ${ax + 8},${ay + 6}`} fill="#0284c7" stroke="#ffffff" strokeWidth={1.2} />
+                    {renderHighlightedCallout(ax, ay, 'AIR VALVE', occupied, mapBounds, {
+                      key: 'wb-airvalve-callout',
+                      preferredSide: 'top',
+                      baseOffsetX: -48,
+                      baseOffsetY: -62,
+                      fontSize: 11.4,
+                      bgFill: '#e0f2fe',
+                      borderStroke: '#0369a1',
+                      textFill: '#0c4a6e',
+                      arrowStroke: '#0369a1',
+                    })}
                   </g>
                 );
               })()}
               {juncNode && (() => {
                 const jp = viewport.project(juncNode.lat, juncNode.lon);
-                return <circle cx={jp.x} cy={jp.y} r={9.5} fill="none" stroke="#9333ea" strokeWidth={2.2} />;
+                return <circle cx={jp.x} cy={jp.y} r={10.5} fill="none" stroke="#9333ea" strokeWidth={2.4} />;
               })()}
 
-              {/* WB1 .. WB38 Nodes & Smart De-Collided Labels */}
+              {/* Highlighted Corridor Landmark Callouts FIRST so node labels never collide with arrows */}
+              {wbLandmarks.map((lm) => {
+                const nd = wbById.get(lm.id);
+                if (!nd) return null;
+                const pt = viewport.project(nd.lat, nd.lon);
+                return renderHighlightedCallout(pt.x, pt.y, lm.label, occupied, mapBounds, {
+                  key: `wb-lm-${lm.id}`,
+                  preferredSide: lm.side,
+                  baseOffsetX: lm.dx,
+                  baseOffsetY: lm.dy,
+                  fontSize: 11.2,
+                  bgFill: '#fffbeb',
+                  borderStroke: '#b45309',
+                  arrowStroke: '#b45309',
+                });
+              })}
+
+              {/* WB1 .. WB38 Points & Labels */}
               {wbData.nodes.map((n, idx) => {
                 const pt = viewport.project(n.lat, n.lon);
                 const col = statusStroke(n.status);
                 const isSel = selectedShaftId === n.id;
                 const displayLbl = n.id.replace(/^WB(\d)$/i, 'WB0$1');
 
-                // Strategic side preference for WB's North-South then East-West bend
+                const lmMatch = wbLandmarks.find((l) => l.id === n.id);
                 const prefSide: 'left' | 'right' | 'top' | 'bottom' =
-                  idx <= 5
+                  n.id === 'WB38'
+                    ? 'left'
+                    : n.id === 'WB23' || n.id === 'WB24'
+                    ? 'left'
+                    : n.id === 'WB32'
+                    ? 'top'
+                    : lmMatch
+                    ? lmMatch.side === 'right'
+                      ? 'left'
+                      : 'right'
+                    : idx <= 5
                     ? idx % 2 === 0
                       ? 'bottom'
                       : 'left'
@@ -1391,11 +1499,11 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   pt.x,
                   pt.y,
                   displayLbl,
-                  8.0,
+                  8.4,
                   occupied,
                   mapBounds,
                   prefSide,
-                  8
+                  8.5
                 );
 
                 return (
@@ -1405,152 +1513,125 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                     onClick={() => onSelectWbNode?.(n.id)}
                   >
                     {isSel && (
-                      <rect x={pt.x - 10} y={pt.y - 10} width={20} height={20} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
+                      <rect x={pt.x - 10.5} y={pt.y - 10.5} width={21} height={21} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
                     )}
-                    <rect
-                      x={pt.x - 6.0}
-                      y={pt.y - 6.0}
-                      width={12}
-                      height={12}
-                      fill="#ffffff"
-                      stroke={col}
-                      strokeWidth={2.2}
-                    />
-                    <circle cx={pt.x} cy={pt.y} r={2.8} fill={col} />
+                    <rect x={pt.x - 6.2} y={pt.y - 6.2} width={12.4} height={12.4} fill="#ffffff" stroke={col} strokeWidth={2.3} />
+                    <circle cx={pt.x} cy={pt.y} r={2.9} fill={col} />
                     {lblPos.leaderNeeded && (
-                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.65} />
+                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.7} />
                     )}
                     <HaloText
                       x={lblPos.x}
                       y={lblPos.y}
                       text={displayLbl}
-                      fontSize={8.0}
+                      fontSize={8.4}
                       fontWeight="700"
                       fill="#0f172a"
-                      haloWidth={3.0}
+                      haloWidth={3.1}
                       textAnchor={lblPos.anchor}
                     />
                   </g>
                 );
               })}
 
-              {/* Prominent Blue Completion Tip Marker (placed cleanly to the right of tipPt) */}
+              {/* Blue Completion Tip Marker */}
               <g>
-                <circle cx={tipPt.x} cy={tipPt.y} r={11} fill="#3b82f6" fillOpacity={0.28} />
-                <circle cx={tipPt.x} cy={tipPt.y} r={6.5} fill={GIS_BLUE} stroke="#ffffff" strokeWidth={2.0} />
-                <line x1={tipPt.x + 6} y1={tipPt.y} x2={tipPt.x + 20} y2={tipPt.y} stroke="#1e3a8a" strokeWidth={1.2} />
-                <rect x={tipPt.x + 20} y={tipPt.y - 10} width={88} height={19} rx={3} fill="#1e3a8a" />
-                <text x={tipPt.x + 64} y={tipPt.y + 3} textAnchor="middle" fontSize={8.0} fontWeight="700" fill="#ffffff">
+                <circle cx={tipPt.x} cy={tipPt.y} r={11.5} fill="#3b82f6" fillOpacity={0.28} />
+                <circle cx={tipPt.x} cy={tipPt.y} r={6.8} fill={GIS_BLUE} stroke="#ffffff" strokeWidth={2.0} />
+                <line x1={tipPt.x + 7} y1={tipPt.y} x2={tipPt.x + 22} y2={tipPt.y} stroke="#1e3a8a" strokeWidth={1.6} />
+                <rect x={tipPt.x + 22} y={tipPt.y - 10} width={96} height={20} rx={3.5} fill="#1e3a8a" />
+                <text x={tipPt.x + 70} y={tipPt.y + 3.2} textAnchor="middle" fontSize={8.5} fontWeight="700" fill="#ffffff">
                   Done: {wbData.completedLengthM.toFixed(1)} m
                 </text>
               </g>
 
-              {/* Corridor Landmark Callouts */}
-              {wbLandmarks.map((lm) => {
-                const nd = wbById.get(lm.id);
-                if (!nd) return null;
-                const pt = viewport.project(nd.lat, nd.lon);
-                const pos = resolveSmartLabel(pt.x + lm.dx, pt.y + lm.dy, lm.label, 8.2, occupied, mapBounds, lm.side, 4);
-                return (
-                  <g key={`wb-lm-${lm.id}`}>
-                    <line x1={pt.x} y1={pt.y} x2={pos.x} y2={pos.y - 2} stroke="#64748b" strokeWidth={0.65} strokeDasharray="2,2" />
-                    <HaloText
-                      x={pos.x}
-                      y={pos.y}
-                      text={lm.label}
-                      fontSize={8.2}
-                      fontWeight="700"
-                      fontStyle="italic"
-                      fill="#334155"
-                      haloWidth={3.0}
-                      textAnchor={pos.anchor}
-                    />
-                  </g>
-                );
-              })}
-
-              {/* Top-Left Compass Rose + Legend Card matching 15nov_p2.png */}
-              {renderCompassRose(mapX + 76, mapY + 62, 34)}
+              {/* Top-Left Compass Rose + Legend Card (NO "Node" word & NO counts next to Complete/On-Going/Remaining!) */}
+              {renderCompassRose(mapX + 74, mapY + 62, 34)}
 
               <g transform={`translate(${legendBox.x0}, ${legendBox.y0})`}>
+                <rect x={2} y={3} width={328} height={338} rx={5} fill="#0f172a" fillOpacity={0.1} />
                 <rect
                   x={0}
                   y={0}
-                  width={320}
+                  width={328}
                   height={338}
-                  rx={4}
+                  rx={5}
                   fill="#ffffff"
-                  fillOpacity={0.94}
+                  fillOpacity={0.95}
                   stroke="#1e293b"
-                  strokeWidth={1.1}
+                  strokeWidth={1.2}
                 />
-                <rect x={0} y={0} width={320} height={28} rx={4} fill="#eff6ff" stroke="#1e293b" strokeWidth={0.8} />
-                <text x={14} y={19} fontSize={12.5} fontWeight="800" fill="#0f172a">
+                <rect x={0} y={0} width={328} height={29} rx={5} fill="#eff6ff" stroke="#1e293b" strokeWidth={0.9} />
+                <text x={14} y={19.5} fontSize={12.8} fontWeight="800" fill="#0f172a">
                   Legend — WB Section Progress
                 </text>
 
-                <text x={14} y={48} fontSize={9.8} fontWeight="700" fill="#1e3a8a">
-                  WB Node Status ({wbData.nodes.length} Nodes)
+                <text x={14} y={49} fontSize={10.0} fontWeight="700" fill="#1e3a8a">
+                  WB Progress Status
                 </text>
                 {[
-                  { label: `Complete (${doneCount})`, color: GIS_GREEN, y: 58 },
-                  { label: `On-Going (${ongCount})`, color: GIS_BLUE, y: 78 },
-                  { label: `Remaining (${remCount})`, color: GIS_RED, y: 98 },
+                  { label: 'Complete', color: GIS_GREEN, y: 59 },
+                  { label: 'On-Going', color: GIS_BLUE, y: 79 },
+                  { label: 'Remaining', color: GIS_RED, y: 99 },
                 ].map((it) => (
                   <g key={it.label}>
-                    <rect x={16} y={it.y} width={13} height={13} fill="#ffffff" stroke={it.color} strokeWidth={2.3} />
-                    <circle cx={22.5} cy={it.y + 6.5} r={2.6} fill={it.color} />
-                    <text x={40} y={it.y + 10} fontSize={9.0} fontWeight="600" fill="#0f172a">
+                    <rect x={16} y={it.y} width={14} height={14} fill="#ffffff" stroke={it.color} strokeWidth={2.5} />
+                    <circle cx={23} cy={it.y + 7} r={3.0} fill={it.color} />
+                    <text x={40} y={it.y + 10.5} fontSize={9.4} fontWeight="600" fill="#0f172a">
                       {it.label}
                     </text>
                   </g>
                 ))}
 
-                {/* Line Length Rows matching 15nov_p2.png */}
-                <line x1={12} y1={124} x2={308} y2={124} stroke="#cbd5e1" strokeWidth={0.9} />
-                <line x1={16} y1={144} x2={48} y2={144} stroke={GIS_GREEN} strokeWidth={4.5} strokeLinecap="round" />
-                <text x={58} y={147.5} fontSize={9.0} fontWeight="700" fill="#15803d">
+                <line x1={12} y1={124} x2={316} y2={124} stroke="#cbd5e1" strokeWidth={0.9} />
+                <line x1={16} y1={144} x2={48} y2={144} stroke={GIS_GREEN} strokeWidth={4.8} strokeLinecap="round" />
+                <text x={58} y={147.5} fontSize={9.2} fontWeight="700" fill="#15803d">
                   WB Complete = {wbData.completedLengthM.toFixed(1)} m ({wbPct.toFixed(1)}%)
                 </text>
 
-                <line x1={16} y1={166} x2={48} y2={166} stroke={GIS_RED} strokeWidth={4.5} strokeLinecap="round" />
-                <text x={58} y={169.5} fontSize={9.0} fontWeight="700" fill="#dc2626">
+                <line x1={16} y1={166} x2={48} y2={166} stroke={GIS_RED} strokeWidth={4.8} strokeLinecap="round" />
+                <text x={58} y={169.5} fontSize={9.2} fontWeight="700" fill="#dc2626">
                   WB Remaining = {wbRemM.toFixed(1)} m
                 </text>
 
-                <circle cx={32} cy={188} r={5} fill={GIS_BLUE} stroke="#ffffff" strokeWidth={1.2} />
-                <text x={58} y={191.5} fontSize={8.8} fontWeight="600" fill="#1e3a8a">
+                <circle cx={32} cy={188} r={5.4} fill={GIS_BLUE} stroke="#ffffff" strokeWidth={1.3} />
+                <text x={58} y={191.5} fontSize={9.0} fontWeight="600" fill="#1e3a8a">
                   Completion Tip Marker
                 </text>
 
                 {viewMode !== 'overall' && (
                   <g>
-                    <line x1={16} y1={209} x2={48} y2={209} stroke={GIS_HIGHLIGHT} strokeWidth={4.5} strokeLinecap="round" />
-                    <text x={58} y={212.5} fontSize={8.5} fontWeight="700" fill="#b45309">
+                    <line x1={16} y1={209} x2={48} y2={209} stroke={GIS_HIGHLIGHT} strokeWidth={4.8} strokeLinecap="round" />
+                    <text x={58} y={212.5} fontSize={8.6} fontWeight="700" fill="#b45309">
                       Added ({file2Label}): +{Math.max(0, wbData.completedLengthM - (wbPrevCompletedM ?? wbData.completedLengthM)).toFixed(1)} m
                     </text>
                   </g>
                 )}
 
-                <line x1={12} y1={226} x2={308} y2={226} stroke="#cbd5e1" strokeWidth={0.9} />
+                <line x1={12} y1={226} x2={316} y2={226} stroke="#cbd5e1" strokeWidth={0.9} />
                 <text x={14} y={244} fontSize={9.5} fontWeight="800" fill="#0f172a">
                   WB Total Pipe Length = {(wbData.totalLengthM / 1000).toFixed(3)} km ({wbData.totalLengthM} m)
                 </text>
-                <text x={14} y={261} fontSize={8.6} fontWeight="600" fill="#334155">
+                <text x={14} y={261} fontSize={8.7} fontWeight="600" fill="#334155">
                   Specification: {wbData.method} {wbData.pipeDia}
                 </text>
 
-                <line x1={12} y1={273} x2={308} y2={273} stroke="#cbd5e1" strokeWidth={0.9} />
-                <text x={14} y={291} fontSize={9.0} fontWeight="700" fill="#1e3a8a">
+                <line x1={12} y1={273} x2={316} y2={273} stroke="#cbd5e1" strokeWidth={0.9} />
+                <text x={14} y={291} fontSize={9.2} fontWeight="700" fill="#1e3a8a">
                   Appurtenances & Reference Points:
                 </text>
-                <rect x={16} y={300} width={13} height={11} fill="#fbcfe8" stroke="#9d174d" strokeWidth={1.4} />
-                <text x={35} y={309} fontSize={8.2} fontWeight="700" fill="#831843">Golapbag SPS</text>
-                <polygon points="122,300 116,311 128,311" fill="#16a34a" />
-                <text x={133} y={309} fontSize={8.2} fontWeight="600" fill="#15803d">Washout</text>
-                <polygon points="194,300 188,311 200,311" fill="#0284c7" />
-                <text x={205} y={309} fontSize={8.2} fontWeight="600" fill="#0369a1">Air Valve</text>
-                <text x={16} y={327} fontSize={8.0} fontWeight="600" fill="#6b21a8">
+                <rect x={16} y={300} width={14} height={12} fill="#fbcfe8" stroke="#9d174d" strokeWidth={1.6} />
+                <text x={36} y={310} fontSize={8.5} fontWeight="700" fill="#831843">Golapbag SPS</text>
+
+                <circle cx={128} cy={306} r={7.5} fill="#bbf7d0" stroke="#15803d" strokeWidth={1.4} />
+                <polygon points="128,301 124,309 132,309" fill="#16a34a" />
+                <text x={140} y={310} fontSize={8.5} fontWeight="700" fill="#14532d">Washout</text>
+
+                <circle cx={204} cy={306} r={7.5} fill="#bae6fd" stroke="#0369a1" strokeWidth={1.4} />
+                <polygon points="204,301 200,309 208,309" fill="#0284c7" />
+                <text x={216} y={310} fontSize={8.5} fontWeight="700" fill="#0c4a6e">Air Valve</text>
+
+                <text x={16} y={328} fontSize={8.2} fontWeight="600" fill="#6b21a8">
                   End Junction: Doyagonj Chowrasta (WD2 / WD3 / WC-1)
                 </text>
               </g>
@@ -1559,7 +1640,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
         })()}
 
         {/* ================================================================ */}
-        {/* PAGE 4: WC PROGRESS MAP                                          */}
+        {/* PAGE 4: WC PROGRESS MAP (PORTRAIT)                               */}
         {/* ================================================================ */}
         {kind === 'wc-map' && (() => {
           const shaftById = new Map<string, ShaftRecord>();
@@ -1568,43 +1649,40 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
           const occupied: RectBox[] = [legendBox, compassBox, scaleBox];
           const wcGeoById = new Map(wcData.geoNodes.map((g) => [g.id, g]));
 
-          // Pre-register every WC node square & Pagla STP box in occupied
           for (const gNode of wcData.geoNodes) {
             const p = viewport.project(gNode.lat, gNode.lon);
             occupied.push({ x0: p.x - 9, y0: p.y - 9, x1: p.x + 9, y1: p.y + 9 });
           }
-          const stpPre = wcGeoById.get('WC-27');
-          if (stpPre) {
-            const tp = viewport.project(stpPre.lat, stpPre.lon);
-            occupied.push({ x0: tp.x - 14, y0: tp.y + 8, x1: tp.x + 76, y1: tp.y + 34 });
-          }
 
-          // Special features & road landmarks from WA_WB_WC_Map.pdf Page 4
           const siphonNode = wcGeoById.get('WC-9');
           const bridgeNode = wcGeoById.get('WC-15');
           const stpNode = wcGeoById.get('WC-27');
 
-          const wcLandmarks: Array<{ id: string; label: string; dx: number; dy: number; side: 'left' | 'right' }> = [
-            { id: 'WC-1', label: 'Doyagonj Chowrasta (Start WC-1)', dx: 64, dy: -14, side: 'right' },
-            { id: 'WC-4', label: 'Shahid Faruk Road', dx: 68, dy: 4, side: 'right' },
-            { id: 'WC-9', label: 'Inverted Siphon & Underpass', dx: -64, dy: 4, side: 'left' },
-            { id: 'WC-11', label: 'Gendaria Rail Station (West)', dx: -68, dy: 8, side: 'left' },
-            { id: 'WC-13', label: 'Khandakar Road', dx: 68, dy: -6, side: 'right' },
-            { id: 'WC-15', label: '1st BD-China Friendship Bridge Rd', dx: -66, dy: 10, side: 'left' },
-            { id: 'WC-17', label: 'Jurain Rail Gate / Titas Gas Rd', dx: 70, dy: -4, side: 'right' },
-            { id: 'WC-21', label: 'Shyampur Kadamtoli', dx: -68, dy: 8, side: 'left' },
-          ];
+          if (stpNode) {
+            const tp = viewport.project(stpNode.lat, stpNode.lon);
+            occupied.push({ x0: tp.x - 22, y0: tp.y + 12, x1: tp.x + 96, y1: tp.y + 42 });
+          }
 
-          const zone5Pt = viewport.project(23.6942, 90.4408);
-          const zone10Pt = viewport.project(23.6865, 90.4470);
+          const zone5Pt = viewport.project(23.6960, 90.4408);
+          const zone10Pt = viewport.project(23.6880, 90.4455);
+
+          const wcLandmarks: Array<{ id: string; label: string; dx: number; dy: number; side: 'left' | 'right' }> = [
+            { id: 'WC-1', label: 'Doyagonj Chowrasta (Start WC-1)', dx: 82, dy: -8, side: 'right' },
+            { id: 'WC-4', label: 'Shahid Faruk Road', dx: 82, dy: 4, side: 'right' },
+            { id: 'WC-9', label: 'Inverted Siphon & Underpass', dx: -230, dy: 4, side: 'left' },
+            { id: 'WC-11', label: 'Gendaria Rail Station (West)', dx: -225, dy: 8, side: 'left' },
+            { id: 'WC-13', label: 'Khandakar Road', dx: 82, dy: -6, side: 'right' },
+            { id: 'WC-15', label: '1st BD-China Friendship Bridge Rd', dx: -245, dy: 8, side: 'left' },
+            { id: 'WC-17', label: 'Jurain Rail Gate / Titas Gas Rd', dx: 82, dy: -6, side: 'right' },
+            { id: 'WC-21', label: 'Shyampur Kadamtoli', dx: -195, dy: 10, side: 'left' },
+          ];
 
           return (
             <g>
-              {/* Zone Watermarks */}
-              <HaloText x={zone5Pt.x} y={zone5Pt.y} text="DSCC ZONE 05" fontSize={12} fontWeight="800" fill="#475569" haloWidth={4} textAnchor="middle" />
-              <HaloText x={zone10Pt.x} y={zone10Pt.y} text="DSCC ZONE 10" fontSize={12} fontWeight="800" fill="#475569" haloWidth={4} textAnchor="middle" />
+              {/* Highlighted DSCC Zone Ribbons */}
+              {renderZoneBadge(zone5Pt.x, zone5Pt.y, 'DSCC ZONE 05', 'dscc', occupied)}
+              {renderZoneBadge(zone10Pt.x, zone10Pt.y, 'DSCC ZONE 10', 'dscc', occupied)}
 
-              {/* Custom KML Lines if imported */}
               {(wcData.customKmlLines || []).map((ln, li) => (
                 <polyline
                   key={`wc-kml-${li}`}
@@ -1634,8 +1712,8 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
 
                 return (
                   <g key={`wc-seg-${gNode.id}`}>
-                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#ffffff" strokeWidth={7.8} strokeLinecap="round" />
-                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={col} strokeWidth={4.8} strokeLinecap="round" />
+                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#ffffff" strokeWidth={8.0} strokeLinecap="round" />
+                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={col} strokeWidth={5.0} strokeLinecap="round" />
                     {viewMode !== 'overall' && deltaInfo.hasNewTunnel && (
                       <line
                         x1={p1.x}
@@ -1643,7 +1721,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                         x2={p2.x}
                         y2={p2.y}
                         stroke={GIS_HIGHLIGHT}
-                        strokeWidth={2.4}
+                        strokeWidth={2.5}
                         strokeDasharray="6,4"
                         strokeLinecap="round"
                       />
@@ -1652,48 +1730,65 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                 );
               })}
 
-              {/* Special Infrastructure Symbols from WA_WB_WC_Map.pdf Page 4 */}
+              {/* Special Infrastructure Symbols */}
               {siphonNode && (() => {
                 const sp = viewport.project(siphonNode.lat, siphonNode.lon);
                 return (
                   <rect
-                    x={sp.x - 13}
-                    y={sp.y - 5}
-                    width={26}
-                    height={10}
+                    x={sp.x - 15}
+                    y={sp.y - 6}
+                    width={30}
+                    height={12}
                     fill="#1e293b"
-                    fillOpacity={0.22}
+                    fillOpacity={0.28}
                     stroke="#0f172a"
-                    strokeWidth={1.4}
+                    strokeWidth={1.8}
                   />
                 );
               })()}
               {bridgeNode && (() => {
                 const bp = viewport.project(bridgeNode.lat, bridgeNode.lon);
-                return <circle cx={bp.x} cy={bp.y} r={10} fill="none" stroke="#0284c7" strokeWidth={1.6} strokeDasharray="3,2" />;
+                return <circle cx={bp.x} cy={bp.y} r={11.5} fill="none" stroke="#0284c7" strokeWidth={2.0} strokeDasharray="3,2" />;
               })()}
               {stpNode && (() => {
                 const tp = viewport.project(stpNode.lat, stpNode.lon);
                 return (
                   <g>
                     <rect
-                      x={tp.x - 12}
-                      y={tp.y + 10}
-                      width={86}
-                      height={22}
-                      rx={3}
+                      x={tp.x - 20}
+                      y={tp.y + 14}
+                      width={112}
+                      height={26}
+                      rx={4}
                       fill="#dbeafe"
                       stroke="#1e3a8a"
-                      strokeWidth={1.8}
+                      strokeWidth={2.0}
                     />
-                    <text x={tp.x + 31} y={tp.y + 24.5} textAnchor="middle" fontSize={8.5} fontWeight="800" fill="#1e3a8a">
+                    <text x={tp.x + 36} y={tp.y + 31} textAnchor="middle" fontSize={9.6} fontWeight="800" fill="#1e3a8a">
                       Pagla STP Outfall
                     </text>
                   </g>
                 );
               })()}
 
-              {/* WC-1 .. WC-27 Composite Shaft + Manhole Nodes */}
+              {/* Highlighted WC Landmark Arrow Callouts FIRST so node labels avoid arrows & badges cleanly */}
+              {wcLandmarks.map((lm) => {
+                const g = wcGeoById.get(lm.id);
+                if (!g) return null;
+                const pt = viewport.project(g.lat, g.lon);
+                return renderHighlightedCallout(pt.x, pt.y, lm.label, occupied, mapBounds, {
+                  key: `wc-lm-${lm.id}`,
+                  preferredSide: lm.side,
+                  baseOffsetX: lm.dx,
+                  baseOffsetY: lm.dy,
+                  fontSize: 11.2,
+                  bgFill: '#fffbeb',
+                  borderStroke: '#b45309',
+                  arrowStroke: '#b45309',
+                });
+              })}
+
+              {/* WC-1 .. WC-27 Nodes */}
               {wcData.geoNodes.map((gNode, idx) => {
                 const pt = viewport.project(gNode.lat, gNode.lon);
                 const sh = shaftById.get(gNode.id);
@@ -1716,16 +1811,23 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   ? getDeltaProgressBadge(sh, bSnap)
                   : { hasNewLayer: false, hasNewMh: false, hasNewTunnel: false };
 
-                const prefSide: 'left' | 'right' = idx % 2 === 0 ? 'right' : 'left';
+                const lmMatch = wcLandmarks.find((l) => l.id === gNode.id);
+                const prefSide: 'left' | 'right' = lmMatch
+                  ? lmMatch.side === 'right'
+                    ? 'left'
+                    : 'right'
+                  : idx % 2 === 0
+                  ? 'right'
+                  : 'left';
                 const lblPos = resolveSmartLabel(
                   pt.x,
                   pt.y,
                   gNode.id,
-                  8.5,
+                  8.8,
                   occupied,
                   mapBounds,
                   prefSide,
-                  9
+                  9.5
                 );
 
                 return (
@@ -1735,64 +1837,25 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                     onClick={() => onSelectShaft?.(gNode.id, 'shaft')}
                   >
                     {viewMode !== 'overall' && (deltaInfo.hasNewLayer || deltaInfo.hasNewMh) && (
-                      <rect x={pt.x - 10.5} y={pt.y - 10.5} width={21} height={21} rx={3} fill="none" stroke={GIS_HIGHLIGHT} strokeWidth={2.0} />
+                      <rect x={pt.x - 11} y={pt.y - 11} width={22} height={22} rx={3} fill="none" stroke={GIS_HIGHLIGHT} strokeWidth={2.0} />
                     )}
                     {isSel && (
-                      <rect x={pt.x - 11.5} y={pt.y - 11.5} width={23} height={23} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
+                      <rect x={pt.x - 12} y={pt.y - 12} width={24} height={24} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
                     )}
-                    <rect
-                      x={pt.x - 7.5}
-                      y={pt.y - 7.5}
-                      width={15}
-                      height={15}
-                      fill="#ffffff"
-                      stroke={outerCol}
-                      strokeWidth={2.5}
-                    />
-                    <circle
-                      cx={pt.x}
-                      cy={pt.y}
-                      r={4.0}
-                      fill={innerCol}
-                      stroke={ringSt === 'ongoing' ? '#0ea5e9' : '#ffffff'}
-                      strokeWidth={0.9}
-                    />
+                    <rect x={pt.x - 7.8} y={pt.y - 7.8} width={15.6} height={15.6} fill="#ffffff" stroke={outerCol} strokeWidth={2.6} />
+                    <circle cx={pt.x} cy={pt.y} r={4.2} fill={innerCol} stroke={ringSt === 'ongoing' ? '#0ea5e9' : '#ffffff'} strokeWidth={0.9} />
                     {lblPos.leaderNeeded && (
-                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.7} />
+                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.75} />
                     )}
                     <HaloText
                       x={lblPos.x}
                       y={lblPos.y}
                       text={gNode.id}
-                      fontSize={8.5}
+                      fontSize={8.8}
                       fontWeight="700"
                       fill="#0f172a"
-                      haloWidth={3.2}
+                      haloWidth={3.3}
                       textAnchor={lblPos.anchor}
-                    />
-                  </g>
-                );
-              })}
-
-              {/* WC Landmarks */}
-              {wcLandmarks.map((lm) => {
-                const g = wcGeoById.get(lm.id);
-                if (!g) return null;
-                const pt = viewport.project(g.lat, g.lon);
-                const pos = resolveSmartLabel(pt.x + lm.dx, pt.y + lm.dy, lm.label, 8.0, occupied, mapBounds, lm.side, 4);
-                return (
-                  <g key={`wc-lm-${lm.id}`}>
-                    <line x1={pt.x} y1={pt.y} x2={pos.x} y2={pos.y - 2} stroke="#64748b" strokeWidth={0.65} strokeDasharray="2,2" />
-                    <HaloText
-                      x={pos.x}
-                      y={pos.y}
-                      text={lm.label}
-                      fontSize={8.0}
-                      fontWeight="600"
-                      fontStyle="italic"
-                      fill="#334155"
-                      haloWidth={2.8}
-                      textAnchor={pos.anchor}
                     />
                   </g>
                 );
@@ -1800,23 +1863,24 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
 
               {/* WC Bottom-Left Frosted Legend & Summary Card */}
               <g transform={`translate(${legendBox.x0}, ${legendBox.y0})`}>
+                <rect x={2} y={3} width={354} height={474} rx={5} fill="#0f172a" fillOpacity={0.1} />
                 <rect
                   x={0}
                   y={0}
-                  width={344}
-                  height={460}
-                  rx={4}
+                  width={354}
+                  height={474}
+                  rx={5}
                   fill="#ffffff"
-                  fillOpacity={0.94}
+                  fillOpacity={0.95}
                   stroke="#1e293b"
-                  strokeWidth={1.1}
+                  strokeWidth={1.2}
                 />
-                <rect x={0} y={0} width={344} height={28} rx={4} fill="#eff6ff" stroke="#1e293b" strokeWidth={0.8} />
-                <text x={14} y={19} fontSize={12.5} fontWeight="800" fill="#0f172a">
+                <rect x={0} y={0} width={354} height={29} rx={5} fill="#eff6ff" stroke="#1e293b" strokeWidth={0.9} />
+                <text x={14} y={19.5} fontSize={12.8} fontWeight="800" fill="#0f172a">
                   Legend — WC Section Progress
                 </text>
 
-                <text x={14} y={48} fontSize={9.8} fontWeight="700" fill="#1e3a8a">
+                <text x={14} y={48} fontSize={10.0} fontWeight="700" fill="#1e3a8a">
                   WC Shaft Status ({wcSummary.totalShafts} Shafts)
                 </text>
                 {[
@@ -1825,14 +1889,14 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   { label: `Remaining (${wcSummary.remainingShafts})`, color: GIS_RED, y: 100 },
                 ].map((it) => (
                   <g key={it.label}>
-                    <rect x={16} y={it.y} width={14} height={14} fill="#ffffff" stroke={it.color} strokeWidth={2.4} />
-                    <text x={40} y={it.y + 11} fontSize={9.0} fontWeight="600" fill="#0f172a">
+                    <rect x={16} y={it.y} width={14} height={14} fill="#ffffff" stroke={it.color} strokeWidth={2.5} />
+                    <text x={40} y={it.y + 11} fontSize={9.2} fontWeight="600" fill="#0f172a">
                       {it.label}
                     </text>
                   </g>
                 ))}
 
-                <text x={14} y={136} fontSize={9.8} fontWeight="700" fill="#1e3a8a">
+                <text x={14} y={136} fontSize={10.0} fontWeight="700" fill="#1e3a8a">
                   WC Manhole Status ({wcSummary.totalManholes} Nos)
                 </text>
                 {[
@@ -1840,101 +1904,98 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   {
                     label: `Cast Done / On-Going (${Math.max(0, wcSummary.castingCompleteCount + wcSummary.castingOngoingCount - wcSummary.completedManholes)})`,
                     color: GIS_BLUE,
-                    y: 165,
+                    y: 166,
                   },
-                  { label: `Remaining (${wcSummary.castingRemainingCount})`, color: GIS_RED, y: 184 },
+                  { label: `Remaining (${wcSummary.castingRemainingCount})`, color: GIS_RED, y: 186 },
                 ].map((it) => (
                   <g key={it.label}>
-                    <circle cx={23} cy={it.y + 6} r={5.2} fill={it.color} stroke="#ffffff" strokeWidth={0.8} />
-                    <text x={40} y={it.y + 9.5} fontSize={8.7} fontWeight="600" fill="#0f172a">
+                    <circle cx={23} cy={it.y + 6} r={5.4} fill={it.color} stroke="#ffffff" strokeWidth={0.8} />
+                    <text x={40} y={it.y + 9.5} fontSize={8.8} fontWeight="600" fill="#0f172a">
                       {it.label}
                     </text>
                   </g>
                 ))}
-                <text x={16} y={208} fontSize={8.0} fontWeight="700" fill="#1d4ed8">
+                <text x={16} y={210} fontSize={8.2} fontWeight="700" fill="#1d4ed8">
                   Cast: {wcSummary.castingCompleteCount} Done | {wcSummary.castingOngoingCount} Ong | {wcSummary.castingRemainingCount} Rem
                 </text>
-                <text x={16} y={222} fontSize={8.0} fontWeight="700" fill="#0284c7">
+                <text x={16} y={225} fontSize={8.2} fontWeight="700" fill="#0284c7">
                   Ring: {wcSummary.precastCompleteCount} Done | {wcSummary.precastOngoingCount} Ong | {wcSummary.precastRemainingCount} Rem
                 </text>
 
-                <text x={14} y={244} fontSize={9.8} fontWeight="700" fill="#1e3a8a">
+                <text x={14} y={248} fontSize={10.0} fontWeight="700" fill="#1e3a8a">
                   WC Micro-Tunneling Status
                 </text>
                 {[
-                  { label: 'Complete', color: GIS_GREEN, y: 256 },
-                  { label: 'On-Going', color: GIS_BLUE, y: 274 },
-                  { label: 'Remaining', color: GIS_RED, y: 292 },
+                  { label: 'Complete', color: GIS_GREEN, y: 260 },
+                  { label: 'On-Going', color: GIS_BLUE, y: 279 },
+                  { label: 'Remaining', color: GIS_RED, y: 298 },
                 ].map((it) => (
                   <g key={it.label}>
-                    <line x1={16} y1={it.y + 4} x2={44} y2={it.y + 4} stroke={it.color} strokeWidth={4.2} strokeLinecap="round" />
-                    <text x={54} y={it.y + 7.5} fontSize={8.8} fontWeight="600" fill="#0f172a">
+                    <line x1={16} y1={it.y + 4} x2={44} y2={it.y + 4} stroke={it.color} strokeWidth={4.4} strokeLinecap="round" />
+                    <text x={54} y={it.y + 7.5} fontSize={9.0} fontWeight="600" fill="#0f172a">
                       {it.label}
                     </text>
                   </g>
                 ))}
 
-                <rect x={198} y={254} width={16} height={11} fill="#dbeafe" stroke="#1e3a8a" strokeWidth={1.4} />
-                <text x={220} y={263} fontSize={8.2} fontWeight="700" fill="#1e3a8a">Pagla STP</text>
-                <rect x={198} y={272} width={16} height={8} fill="#1e293b" fillOpacity={0.25} stroke="#0f172a" strokeWidth={1.1} />
-                <text x={220} y={279} fontSize={8.0} fontWeight="600" fill="#0f172a">Underpass / Siphon</text>
+                <rect x={202} y={258} width={16} height={12} fill="#dbeafe" stroke="#1e3a8a" strokeWidth={1.6} />
+                <text x={224} y={268} fontSize={8.6} fontWeight="700" fill="#1e3a8a">Pagla STP</text>
+                <rect x={202} y={277} width={16} height={9} fill="#1e293b" fillOpacity={0.28} stroke="#0f172a" strokeWidth={1.3} />
+                <text x={224} y={285} fontSize={8.4} fontWeight="700" fill="#0f172a">Underpass / Siphon</text>
 
-                <line x1={12} y1={310} x2={332} y2={310} stroke="#cbd5e1" strokeWidth={0.9} />
+                <line x1={12} y1={317} x2={342} y2={317} stroke="#cbd5e1" strokeWidth={0.9} />
 
-                <text x={14} y={328} fontSize={9.2} fontWeight="800" fill="#0f172a">
+                <text x={14} y={336} fontSize={9.5} fontWeight="800" fill="#0f172a">
                   TOTAL LENGTH
                 </text>
-                <text x={330} y={328} textAnchor="end" fontSize={9.2} fontWeight="800" fill="#0f172a">
+                <text x={340} y={336} textAnchor="end" fontSize={9.5} fontWeight="800" fill="#0f172a">
                   : {(wcSummary.totalTunnelLengthM / 1000).toFixed(3)} km
                 </text>
-                <text x={14} y={345} fontSize={9.2} fontWeight="800" fill="#15803d">
+                <text x={14} y={354} fontSize={9.5} fontWeight="800" fill="#15803d">
                   COMPLETED LENGTH
                 </text>
-                <text x={330} y={345} textAnchor="end" fontSize={9.2} fontWeight="800" fill="#15803d">
+                <text x={340} y={354} textAnchor="end" fontSize={9.5} fontWeight="800" fill="#15803d">
                   : {(wcSummary.completedTunnelLengthM / 1000).toFixed(3)} km ({wcSummary.tunnelPctOverall.toFixed(1)}%)
                 </text>
 
-                <text x={14} y={365} fontSize={8.6} fontWeight="700" fill="#334155">
+                <text x={14} y={375} fontSize={8.8} fontWeight="700" fill="#334155">
                   1. DN 1800 ({(wcSummary.byDia.DN1800.totalM / 1000).toFixed(3)} km)
                 </text>
-                <text x={330} y={365} textAnchor="end" fontSize={8.6} fontWeight="700" fill="#0f172a">
+                <text x={340} y={375} textAnchor="end" fontSize={8.8} fontWeight="700" fill="#0f172a">
                   Done: {(wcSummary.byDia.DN1800.completedM / 1000).toFixed(3)} km
                 </text>
-                <text x={14} y={381} fontSize={8.6} fontWeight="700" fill="#334155">
+                <text x={14} y={392} fontSize={8.8} fontWeight="700" fill="#334155">
                   2. DN 2400 ({(wcSummary.byDia.DN2400.totalM / 1000).toFixed(3)} km)
                 </text>
-                <text x={330} y={381} textAnchor="end" fontSize={8.6} fontWeight="700" fill="#0f172a">
+                <text x={340} y={392} textAnchor="end" fontSize={8.8} fontWeight="700" fill="#0f172a">
                   Done: {(wcSummary.byDia.DN2400.completedM / 1000).toFixed(3)} km
                 </text>
-                <text x={14} y={397} fontSize={8.6} fontWeight="700" fill="#334155">
+                <text x={14} y={409} fontSize={8.8} fontWeight="700" fill="#334155">
                   3. DN 2600 ({(wcSummary.byDia.DN2600.totalM / 1000).toFixed(3)} km)
                 </text>
-                <text x={330} y={397} textAnchor="end" fontSize={8.6} fontWeight="700" fill="#0f172a">
+                <text x={340} y={409} textAnchor="end" fontSize={8.8} fontWeight="700" fill="#0f172a">
                   Done: {(wcSummary.byDia.DN2600.completedM / 1000).toFixed(3)} km
                 </text>
 
-                <rect x={12} y={409} width={320} height={42} rx={3} fill="#faf5ff" stroke="#9333ea" strokeWidth={0.8} />
-                <text x={20} y={425} fontSize={8.2} fontWeight="700" fill="#6b21a8">
+                <rect x={12} y={421} width={330} height={43} rx={3} fill="#faf5ff" stroke="#9333ea" strokeWidth={0.9} />
+                <text x={20} y={437} fontSize={8.4} fontWeight="700" fill="#6b21a8">
                   Corridor: Doyagonj Chowrasta (WC-1) to Pagla STP (WC-27)
                 </text>
-                <text x={20} y={441} fontSize={8.2} fontWeight="700" fill={wcSummary.completedTunnelLengthM > 0 || wcSummary.completedShafts > 0 ? '#15803d' : '#b91c1c'}>
+                <text x={20} y={454} fontSize={8.4} fontWeight="700" fill={wcSummary.completedTunnelLengthM > 0 || wcSummary.completedShafts > 0 ? '#15803d' : '#b91c1c'}>
                   Status: {wcSummary.completedTunnelLengthM > 0 || wcSummary.completedShafts > 0 ? 'Active Construction' : 'Not Started (All Remaining)'}
                 </text>
               </g>
 
-              {renderCompassRose(mapX + mapW - 60, mapY + 60, 34)}
+              {renderCompassRose(mapX + mapW - 60, mapY + 62, 34)}
             </g>
           );
         })()}
 
-        {/* Shared Bottom-Right Cartographic Scale Bar & Esri Attribution */}
+        {/* Shared Bottom-Right Scale Bar + Esri Credit ONLY */}
         {renderScaleBarAndAttribution(
           viewport,
           mapX + mapW - 14,
-          mapY + mapH - 12,
-          sheetNoLabel,
-          `${settings.drawingNo} (${settings.revision})`,
-          settings.checkedBy
+          mapY + mapH - 14
         )}
       </g>
 

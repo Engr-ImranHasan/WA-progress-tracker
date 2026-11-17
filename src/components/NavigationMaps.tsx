@@ -398,7 +398,7 @@ export const WbNavigationMapGroup: React.FC<WbMapProps> = ({
 
           <circle cx={10} cy={compact ? 25 : 34} r={2.2} fill="#f59e0b" stroke="#92400e" strokeWidth={0.6} />
           <text x={27} y={compact ? 27 : 36.5} fontSize={compact ? 4.6 : 6.2} fill="#334155">
-            Node: Done / On-going / Rem
+            Complete / On-Going / Rem
           </text>
         </g>
       </g>
