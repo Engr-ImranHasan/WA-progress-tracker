@@ -237,9 +237,9 @@ export function App() {
 
   const handleSwitchSection = (sec: SectionTab) => {
     setState((p) => ({ ...p, activeSection: sec }));
-    if (sec === 'wa') setCombinedEditorTarget('wa');
-    if (sec === 'wb') setCombinedEditorTarget('wb');
-    if (sec === 'wc') setCombinedEditorTarget('wc');
+    if (sec === 'wa' || sec === 'wa-map') setCombinedEditorTarget('wa');
+    if (sec === 'wb' || sec === 'wb-map') setCombinedEditorTarget('wb');
+    if (sec === 'wc' || sec === 'wc-map') setCombinedEditorTarget('wc');
   };
 
   // Open Save Overall File modal
@@ -279,6 +279,9 @@ export function App() {
                 pumpStation: JSON.parse(JSON.stringify(prev.pumpStation)),
                 wb: JSON.parse(JSON.stringify(prev.wb)),
                 wc: JSON.parse(JSON.stringify(prev.wc)),
+                waGeoNodes: prev.waGeoNodes ? JSON.parse(JSON.stringify(prev.waGeoNodes)) : undefined,
+                spsCoord: prev.spsCoord ? { ...prev.spsCoord } : undefined,
+                waCustomPoints: prev.waCustomPoints ? JSON.parse(JSON.stringify(prev.waCustomPoints)) : undefined,
               }
             : f
         ),
@@ -303,6 +306,9 @@ export function App() {
       pumpStation: JSON.parse(JSON.stringify(state.pumpStation)),
       wb: JSON.parse(JSON.stringify(state.wb)),
       wc: JSON.parse(JSON.stringify(state.wc)),
+      waGeoNodes: state.waGeoNodes ? JSON.parse(JSON.stringify(state.waGeoNodes)) : undefined,
+      spsCoord: state.spsCoord ? { ...state.spsCoord } : undefined,
+      waCustomPoints: state.waCustomPoints ? JSON.parse(JSON.stringify(state.waCustomPoints)) : undefined,
     };
 
     setState((prev) => ({
@@ -330,6 +336,9 @@ export function App() {
       pumpStation: JSON.parse(JSON.stringify(file.pumpStation)),
       wb: JSON.parse(JSON.stringify(file.wb || createInitialWbData())),
       wc: JSON.parse(JSON.stringify(file.wc || createInitialWcData())),
+      waGeoNodes: file.waGeoNodes ? JSON.parse(JSON.stringify(file.waGeoNodes)) : prev.waGeoNodes,
+      spsCoord: file.spsCoord ? { ...file.spsCoord } : prev.spsCoord,
+      waCustomPoints: file.waCustomPoints ? JSON.parse(JSON.stringify(file.waCustomPoints)) : [],
       settings: {
         ...prev.settings,
         reportDate: file.date || prev.settings.reportDate,
@@ -627,6 +636,9 @@ export function App() {
         pumpStation: previewFile.pumpStation,
         wb: previewFile.wb || createInitialWbData(),
         wc: previewFile.wc || createInitialWcData(),
+        waGeoNodes: previewFile.waGeoNodes || state.waGeoNodes,
+        spsCoord: previewFile.spsCoord || state.spsCoord,
+        waCustomPoints: previewFile.waCustomPoints || [],
         settings: {
           ...state.settings,
           reportDate: previewFile.date || state.settings.reportDate,
@@ -637,9 +649,9 @@ export function App() {
 
   // Determine which right-side inspector to display
   const activeInspectorMode: 'wa' | 'wb' | 'wc' =
-    state.activeSection === 'wb'
+    state.activeSection === 'wb' || state.activeSection === 'wb-map'
       ? 'wb'
-      : state.activeSection === 'wc'
+      : state.activeSection === 'wc' || state.activeSection === 'wc-map'
       ? 'wc'
       : state.activeSection === 'combined'
       ? combinedEditorTarget
@@ -685,33 +697,43 @@ export function App() {
           </span>
         </div>
 
-        {/* Section Tabs: WA | WB | WC | Combined */}
-        <div className="flex items-center gap-1 rounded-lg bg-slate-800 p-1">
+        {/* Section Tabs: WA | WB | WC | Combined + Portrait GIS Maps */}
+        <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-800 p-1">
           {(
             [
               { id: 'wa', label: 'WA', sub: '37 + SPS' },
               { id: 'wb', label: 'WB', sub: 'Open Cut' },
               { id: 'wc', label: 'WC', sub: '27 Shafts' },
               { id: 'combined', label: isBn ? 'Combined (একসাথে)' : 'Combined', sub: 'WA+WB+WC' },
+              { id: 'wa-map', label: 'WA Map', sub: 'GIS' },
+              { id: 'wb-map', label: 'WB Map', sub: 'GIS' },
+              { id: 'wc-map', label: 'WC Map', sub: 'GIS' },
             ] as { id: SectionTab; label: string; sub: string }[]
           ).map((tab) => {
             const active = state.activeSection === tab.id;
+            const isMapTab = tab.id.endsWith('-map');
             return (
               <button
                 key={tab.id}
                 onClick={() => handleSwitchSection(tab.id)}
-                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold transition ${
+                className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold transition ${
                   active
                     ? tab.id === 'combined'
                       ? 'bg-indigo-500 text-white shadow'
+                      : isMapTab
+                      ? 'bg-emerald-500 text-slate-950 shadow'
                       : 'bg-blue-500 text-white shadow'
+                    : isMapTab
+                    ? 'text-emerald-300 hover:bg-slate-700 hover:text-white'
                     : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                 }`}
               >
                 <span>{tab.label}</span>
-                <span className="hidden md:inline text-[10px] font-normal opacity-85">
-                  ({tab.sub})
-                </span>
+                {!isMapTab && (
+                  <span className="hidden md:inline text-[10px] font-normal opacity-85">
+                    ({tab.sub})
+                  </span>
+                )}
               </button>
             );
           })}

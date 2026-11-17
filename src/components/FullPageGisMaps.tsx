@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
 import {
-  GOLAPBAG_SPS_COORD,
-  INITIAL_WA_GEO_NODES,
+  DEFAULT_AIR_VALVE_COORD,
+  DEFAULT_WASHOUT_COORD,
 } from '../data/wbcInitialData';
 import {
   AppState,
+  CustomMapPoint,
   ShaftRecord,
   ShaftSnapshotItem,
   WorkStatus,
@@ -33,9 +34,9 @@ import {
 // ISO A1 Portrait geometry (594 x 841 mm -> 1188 x 1682 viewBox)
 export const FULL_MAP_FRAME = {
   x: 44,
-  y: 78,
+  y: 86,
   w: 1100,
-  h: 1566,
+  h: 1558,
   padRatio: 0.09,
   tileOutW: 1120,
   tileOutH: 1594,
@@ -158,8 +159,8 @@ function resolveSmartLabel(
   preferredSide: 'right' | 'left' | 'top' | 'bottom' = 'right',
   nodeDotRadius = 8
 ): PlacedLabel {
-  const estW = Math.max(24, label.length * fontSize * 0.58 + 4);
-  const estH = fontSize + 3;
+  const estW = Math.max(28, label.length * fontSize * 0.62 + 6);
+  const estH = fontSize + 4;
 
   const baseOffsets: Array<[number, number, 'start' | 'middle' | 'end']> =
     preferredSide === 'left'
@@ -247,8 +248,8 @@ function resolveSmartLabel(
     }
   }
 
-  for (let dist = 28; dist <= 72; dist += 12) {
-    for (let deg = 0; deg < 360; deg += 45) {
+  for (let dist = 26; dist <= 96; dist += 12) {
+    for (let deg = 0; deg < 360; deg += 30) {
       const rad = (deg * Math.PI) / 180;
       const dx = Math.round(Math.cos(rad) * dist);
       const dy = Math.round(Math.sin(rad) * dist);
@@ -293,27 +294,29 @@ function renderHighlightedCallout(
     borderStroke?: string;
     textFill?: string;
     arrowStroke?: string;
+    stopDist?: number;
     key?: string;
   }
 ) {
-  const fontSize = opts?.fontSize ?? 11.2;
+  const fontSize = opts?.fontSize ?? 15.0;
+  const stopDist = opts?.stopDist ?? 10;
   const side = opts?.preferredSide ?? 'right';
-  const boxW = Math.max(82, Math.round(text.length * fontSize * 0.56 + 18));
-  const boxH = Math.round(fontSize + 11);
+  const boxW = Math.max(112, Math.round(text.length * fontSize * 0.56 + 24));
+  const boxH = Math.round(fontSize + 15);
 
-  const prefDx = opts?.baseOffsetX ?? (side === 'left' ? -(boxW + 78) : 78);
+  const prefDx = opts?.baseOffsetX ?? (side === 'left' ? -(boxW + 84) : 84);
   const prefDy = opts?.baseOffsetY ?? 0;
 
   const candidates: Array<[number, number]> = [
     [prefDx, prefDy],
-    [prefDx, prefDy - 28],
-    [prefDx, prefDy + 28],
-    [side === 'left' ? -(boxW + 105) : 105, prefDy],
-    [side === 'left' ? -(boxW + 68) : 68, prefDy - 46],
-    [side === 'left' ? -(boxW + 68) : 68, prefDy + 46],
-    [side === 'left' ? 78 : -(boxW + 78), prefDy],
-    [side === 'left' ? 90 : -(boxW + 90), prefDy - 32],
-    [side === 'left' ? 90 : -(boxW + 90), prefDy + 32],
+    [prefDx, prefDy - 34],
+    [prefDx, prefDy + 34],
+    [side === 'left' ? -(boxW + 115) : 115, prefDy],
+    [side === 'left' ? -(boxW + 76) : 76, prefDy - 54],
+    [side === 'left' ? -(boxW + 76) : 76, prefDy + 54],
+    [side === 'left' ? 84 : -(boxW + 84), prefDy],
+    [side === 'left' ? 96 : -(boxW + 96), prefDy - 38],
+    [side === 'left' ? 96 : -(boxW + 96), prefDy + 38],
   ];
 
   let chosenX = targetX + prefDx;
@@ -361,21 +364,22 @@ function renderHighlightedCallout(
   const ux = dx / len;
   const uy = dy / len;
 
-  // Stop arrowhead ~8px before target center so it points crisply right onto target node edge
-  const tipX = targetX - ux * 8;
-  const tipY = targetY - uy * 8;
-  const arrowLen = 8.5;
-  const arrowHalfW = 4.2;
+  // Stop arrowhead `stopDist` px before target center so surrounding-area arrows stay clearly separated from shaft dots
+  const effStop = Math.min(stopDist, Math.max(8, len - 18));
+  const tipX = targetX - ux * effStop;
+  const tipY = targetY - uy * effStop;
+  const arrowLen = 11.5;
+  const arrowHalfW = 5.2;
   const baseX = tipX - ux * arrowLen;
   const baseY = tipY - uy * arrowLen;
   const px = -uy;
   const py = ux;
 
-  // Reserve sampled arrow corridor boxes in `occupied` so node labels NEVER sit under arrow lines!
+  // Reserve sampled arrow corridor boxes in `occupied` so node labels NEVER overlap arrow lines!
   for (let t = 0.15; t <= 0.85; t += 0.23) {
     const ax = startX + (tipX - startX) * t;
     const ay = startY + (tipY - startY) * t;
-    occupied.push({ x0: ax - 9, y0: ay - 7, x1: ax + 9, y1: ay + 7 });
+    occupied.push({ x0: ax - 10, y0: ay - 8, x1: ax + 10, y1: ay + 8 });
   }
 
   const bgFill = opts?.bgFill ?? '#fffbeb';
@@ -392,7 +396,7 @@ function renderHighlightedCallout(
         x2={baseX}
         y2={baseY}
         stroke="#ffffff"
-        strokeWidth={4.2}
+        strokeWidth={5.2}
         strokeLinecap="round"
       />
       <line
@@ -401,7 +405,7 @@ function renderHighlightedCallout(
         x2={baseX}
         y2={baseY}
         stroke={arrowStroke}
-        strokeWidth={2.0}
+        strokeWidth={2.6}
         strokeLinecap="round"
       />
       {/* Highlighted vector arrowhead */}
@@ -409,16 +413,16 @@ function renderHighlightedCallout(
         points={`${tipX.toFixed(1)},${tipY.toFixed(1)} ${(baseX + px * arrowHalfW).toFixed(1)},${(baseY + py * arrowHalfW).toFixed(1)} ${(baseX - px * arrowHalfW).toFixed(1)},${(baseY - py * arrowHalfW).toFixed(1)}`}
         fill={arrowStroke}
         stroke="#ffffff"
-        strokeWidth={0.9}
+        strokeWidth={1.0}
       />
 
       {/* Callout badge shadow & frosted card */}
       <rect
         x={chosenX + 1.5}
-        y={chosenY + 1.8}
+        y={chosenY + 2.0}
         width={boxW}
         height={boxH}
-        rx={4}
+        rx={5}
         fill="#0f172a"
         fillOpacity={0.14}
       />
@@ -427,18 +431,18 @@ function renderHighlightedCallout(
         y={chosenY}
         width={boxW}
         height={boxH}
-        rx={4}
+        rx={5}
         fill={bgFill}
         fillOpacity={0.96}
         stroke={borderStroke}
-        strokeWidth={1.35}
+        strokeWidth={1.6}
       />
       <text
         x={pillCx}
-        y={chosenY + boxH * 0.68}
+        y={chosenY + boxH * 0.69}
         textAnchor="middle"
         fontSize={fontSize}
-        fontWeight="700"
+        fontWeight="800"
         fill={textFill}
       >
         {text}
@@ -457,9 +461,9 @@ function renderZoneBadge(
   variant: 'dncc' | 'dscc',
   occupied: RectBox[]
 ) {
-  const fontSize = 13.0;
-  const w = Math.max(120, Math.round(text.length * 8.4 + 26));
-  const h = 28;
+  const fontSize = 14.5;
+  const w = Math.max(134, Math.round(text.length * 9.5 + 28));
+  const h = 32;
   const x = cx - w / 2;
   const y = cy - h / 2;
   occupied.push({ x0: x, y0: y, x1: x + w, y1: y + h });
@@ -471,10 +475,10 @@ function renderZoneBadge(
   return (
     <g key={`zone-${text}`}>
       <rect x={x + 1.5} y={y + 2} width={w} height={h} rx={5} fill="#0f172a" fillOpacity={0.15} />
-      <rect x={x} y={y} width={w} height={h} rx={5} fill={fill} fillOpacity={0.95} stroke={stroke} strokeWidth={1.9} />
+      <rect x={x} y={y} width={w} height={h} rx={5} fill={fill} fillOpacity={0.95} stroke={stroke} strokeWidth={2.0} />
       <text
         x={cx}
-        y={cy + 4.5}
+        y={cy + 5.0}
         textAnchor="middle"
         fontSize={fontSize}
         fontWeight="800"
@@ -684,6 +688,63 @@ function formatWaMapNodeId(id: string): string {
   return `WA ${num < 10 ? '0' + num : num}${suf}`;
 }
 
+function renderCustomMapPoints(
+  points: CustomMapPoint[] | undefined,
+  viewport: ProjectedViewport,
+  occupied: RectBox[],
+  bounds: RectBox
+) {
+  if (!points || points.length === 0) return null;
+  return (
+    <g>
+      {points.map((cp) => {
+        const pt = viewport.project(cp.lat, cp.lon);
+        const lbl = resolveSmartLabel(pt.x, pt.y, cp.name, 10.6, occupied, bounds, 'right', 13);
+        const estW = Math.max(44, cp.name.length * 6.8 + 14);
+        const boxX =
+          lbl.anchor === 'start'
+            ? lbl.x - 4
+            : lbl.anchor === 'end'
+            ? lbl.x - estW + 4
+            : lbl.x - estW / 2;
+        return (
+          <g key={`custom-pt-${cp.id}`}>
+            <line x1={pt.x} y1={pt.y} x2={lbl.x} y2={lbl.y - 3} stroke="#6b21a8" strokeWidth={1.3} strokeDasharray="3,2" />
+            <circle cx={pt.x} cy={pt.y} r={9.5} fill="#f3e8ff" stroke="#7e22ce" strokeWidth={2.3} />
+            <polygon
+              points={`${pt.x},${pt.y - 5.5} ${pt.x + 5.5},${pt.y} ${pt.x},${pt.y + 5.5} ${pt.x - 5.5},${pt.y}`}
+              fill="#9333ea"
+              stroke="#ffffff"
+              strokeWidth={1.0}
+            />
+            <rect
+              x={boxX}
+              y={lbl.y - 12}
+              width={estW}
+              height={17}
+              rx={3.5}
+              fill="#faf5ff"
+              fillOpacity={0.96}
+              stroke="#7e22ce"
+              strokeWidth={1.5}
+            />
+            <text
+              x={boxX + estW / 2}
+              y={lbl.y}
+              textAnchor="middle"
+              fontSize={10.4}
+              fontWeight="800"
+              fill="#581c87"
+            >
+              {cp.name}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 function getDeltaProgressBadge(
   s: ShaftRecord,
   bSnap?: ShaftSnapshotItem
@@ -713,6 +774,9 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
     displayPump: pumpStation,
     displayWb: wbData,
     displayWc: wcData,
+    displayWaGeoNodes: waGeoNodes,
+    displaySpsCoord: spsCoord,
+    displayWaCustomPoints: waCustomPoints,
     baseline,
     file1Label,
     file2Label,
@@ -731,9 +795,21 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
     FULL_MAP_FRAME;
 
   const viewport = useMemo(() => {
+    const filterNearby = (pts: CustomMapPoint[], refs: Array<{ lat: number; lon: number }>) => {
+      if (!pts.length || !refs.length) return [];
+      const minLa = Math.min(...refs.map((r) => r.lat));
+      const maxLa = Math.max(...refs.map((r) => r.lat));
+      const minLo = Math.min(...refs.map((r) => r.lon));
+      const maxLo = Math.max(...refs.map((r) => r.lon));
+      return pts.filter(
+        (p) => p.lat >= minLa - 0.04 && p.lat <= maxLa + 0.04 && p.lon >= minLo - 0.04 && p.lon <= maxLo + 0.04
+      );
+    };
+
     if (kind === 'wa-map') {
+      const basePts = [...waGeoNodes, spsCoord];
       return buildGeoViewport(
-        [...INITIAL_WA_GEO_NODES, GOLAPBAG_SPS_COORD],
+        [...basePts, ...filterNearby(waCustomPoints, basePts)],
         mapX,
         mapY,
         mapW,
@@ -742,14 +818,43 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
       );
     }
     if (kind === 'wb-map') {
-      return buildGeoViewport(wbData.nodes, mapX,
+      const wash = wbData.washoutCoord || DEFAULT_WASHOUT_COORD;
+      const airV = wbData.airValveCoord || DEFAULT_AIR_VALVE_COORD;
+      const basePts = [...wbData.nodes, wash, airV];
+      return buildGeoViewport(
+        [...basePts, ...filterNearby(wbData.customPoints || [], wbData.nodes)],
+        mapX,
         mapY,
         mapW,
         mapH,
-        padRatio);
+        padRatio
+      );
     }
-    return buildGeoViewport(wcData.geoNodes, mapX, mapY, mapW, mapH, padRatio);
-  }, [kind, wbData.nodes, wcData.geoNodes, mapX, mapY, mapW, mapH, padRatio]);
+    return buildGeoViewport(
+      [...wcData.geoNodes, ...filterNearby(wcData.customPoints || [], wcData.geoNodes)],
+      mapX,
+      mapY,
+      mapW,
+      mapH,
+      padRatio
+    );
+  }, [
+    kind,
+    waGeoNodes,
+    spsCoord,
+    waCustomPoints,
+    wbData.nodes,
+    wbData.washoutCoord,
+    wbData.airValveCoord,
+    wbData.customPoints,
+    wcData.geoNodes,
+    wcData.customPoints,
+    mapX,
+    mapY,
+    mapW,
+    mapH,
+    padRatio,
+  ]);
 
   const tileDataUrl = useMapTileSnapshot(
     viewport,
@@ -809,6 +914,11 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
     y1: mapY + mapH - 8,
   };
 
+  const sectionCode: 'WA' | 'WB' | 'WC' =
+    kind === 'wa-map' ? 'WA' : kind === 'wb-map' ? 'WB' : 'WC';
+  const sectionAccent =
+    kind === 'wa-map' ? '#15803d' : kind === 'wb-map' ? '#1d4ed8' : '#7e22ce';
+
   return (
     <svg
       ref={svgRef}
@@ -826,28 +936,36 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
       <rect x={0} y={0} width={SHEET_W} height={SHEET_H} fill="#ffffff" />
       <rect x={12} y={12} width={SHEET_W - 24} height={SHEET_H - 24} fill="none" stroke="#0f172a" strokeWidth={1.3} />
 
-      {/* Top Cartographic Title Banner */}
-      <rect x={16} y={16} width={SHEET_W - 32} height={54} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={0.7} />
+      {/* Top Cartographic Title Banner with Bold Section Badge */}
+      <rect x={16} y={14} width={SHEET_W - 32} height={56} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={0.7} />
 
-      <text x={28} y={35} fontSize={9.0} fontWeight="700" fill="#1e3a8a">
+      <rect x={22} y={17} width={104} height={50} rx={6} fill={sectionAccent} />
+      <text x={74} y={44} textAnchor="middle" fontSize={27} fontWeight="900" fill="#ffffff" letterSpacing={1.4}>
+        {sectionCode}
+      </text>
+      <text x={74} y={59} textAnchor="middle" fontSize={10.2} fontWeight="800" fill="#f1f5f9" letterSpacing={0.6}>
+        Section
+      </text>
+
+      <text x={136} y={37} fontSize={9.2} fontWeight="800" fill={sectionAccent}>
         {sheetNoLabel}
       </text>
-      <text x={28} y={49} fontSize={7.6} fontWeight="600" fill="#475569">
+      <text x={136} y={52} fontSize={7.8} fontWeight="600" fill="#475569">
         {settings.drawingNo} ({settings.revision})
       </text>
 
-      <text x={468} y={35} textAnchor="middle" fontSize={14.4} fontWeight="800" fill="#0f172a">
+      <text x={516} y={37} textAnchor="middle" fontSize={14.6} fontWeight="800" fill="#0f172a">
         {mapTitle}
       </text>
-      <text x={468} y={53} textAnchor="middle" fontSize={9.0} fontWeight="600" fill="#334155">
+      <text x={516} y={55} textAnchor="middle" fontSize={9.0} fontWeight="600" fill="#334155">
         Dhaka Sanitation Improvement Project (DSIP) | Package WD-02 — As of {formatDateDisplay(settings.reportDate)}
       </text>
 
       <rect
         x={SHEET_W - 418}
-        y={23}
+        y={22}
         width={390}
-        height={38}
+        height={40}
         rx={4}
         fill={viewMode === 'weekly' ? '#fffbeb' : viewMode === 'monthly' ? '#ecfeff' : '#f0fdf4'}
         stroke={viewMode === 'weekly' ? '#d97706' : viewMode === 'monthly' ? '#0891b2' : '#16a34a'}
@@ -856,7 +974,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
       <text x={SHEET_W - 223} y={39} textAnchor="middle" fontSize={7.1} fontWeight="700" fill="#0f172a">
         {trunc(periodText, 68)}
       </text>
-      <text x={SHEET_W - 223} y={52} textAnchor="middle" fontSize={6.7} fontWeight="600" fill="#475569">
+      <text x={SHEET_W - 223} y={53} textAnchor="middle" fontSize={6.7} fontWeight="600" fill="#475569">
         Client: {settings.clientName} | {settings.contractorName}
       </text>
 
@@ -899,13 +1017,17 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
           for (const s of waShafts) shaftById.set(s.id, s);
 
           const occupied: RectBox[] = [legendBox, compassBox, scaleBox];
-          const geoById = new Map(INITIAL_WA_GEO_NODES.map((g) => [g.id, g]));
-          const spsPt = viewport.project(GOLAPBAG_SPS_COORD.lat, GOLAPBAG_SPS_COORD.lon);
+          const geoById = new Map(waGeoNodes.map((g) => [g.id, g]));
+          const spsPt = viewport.project(spsCoord.lat, spsCoord.lon);
 
-          // Pre-seed WA square markers + SPS marker
-          for (const gNode of INITIAL_WA_GEO_NODES) {
+          // Pre-seed WA square markers + SPS marker + custom points
+          for (const gNode of waGeoNodes) {
             const p = viewport.project(gNode.lat, gNode.lon);
-            occupied.push({ x0: p.x - 9, y0: p.y - 9, x1: p.x + 9, y1: p.y + 9 });
+            occupied.push({ x0: p.x - 10, y0: p.y - 10, x1: p.x + 10, y1: p.y + 10 });
+          }
+          for (const cp of waCustomPoints) {
+            const p = viewport.project(cp.lat, cp.lon);
+            occupied.push({ x0: p.x - 11, y0: p.y - 11, x1: p.x + 11, y1: p.y + 11 });
           }
           occupied.push({
             x0: spsPt.x - 16,
@@ -923,16 +1045,17 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
             side: 'left' | 'right';
             dx: number;
             dy: number;
+            stopDist: number;
           }> = [
-            { nodeId: 'WA-1', label: 'Mirbag (Start WA-01)', side: 'left', dx: -175, dy: 42 },
-            { nodeId: 'WA-12', label: 'Moulovirtek (Rampura)', side: 'left', dx: -215, dy: 24 },
-            { nodeId: 'WA-14', label: 'Sipahibag Moor', side: 'right', dx: 78, dy: -4 },
-            { nodeId: 'WA-18', label: 'Goran Tempo Stand', side: 'left', dx: -190, dy: 0 },
-            { nodeId: 'WA-22', label: 'East Bashaboo', side: 'left', dx: -165, dy: 0 },
-            { nodeId: 'WA-23', label: 'Chayabithy', side: 'right', dx: 76, dy: 0 },
-            { nodeId: 'WA-27', label: 'North Mugdapara', side: 'right', dx: 76, dy: -4 },
-            { nodeId: 'WA-28', label: 'Mugdapara-Maniknogor Bridge', side: 'left', dx: -250, dy: 4 },
-            { nodeId: 'WA-35', label: 'City Corp. Adarsha High School', side: 'left', dx: -245, dy: -8 },
+            { nodeId: 'WA-1', label: 'Mirbag (Start WA-01)', side: 'left', dx: -215, dy: 46, stopDist: 10 },
+            { nodeId: 'WA-12', label: 'Moulovirtek (Rampura)', side: 'left', dx: -275, dy: 34, stopDist: 34 },
+            { nodeId: 'WA-14', label: 'Sipahibag Moor', side: 'right', dx: 92, dy: -22, stopDist: 34 },
+            { nodeId: 'WA-18', label: 'Goran Tempo Stand', side: 'left', dx: -250, dy: -4, stopDist: 34 },
+            { nodeId: 'WA-22', label: 'East Bashaboo', side: 'left', dx: -220, dy: -14, stopDist: 34 },
+            { nodeId: 'WA-23', label: 'Chayabithy', side: 'right', dx: 92, dy: 4, stopDist: 34 },
+            { nodeId: 'WA-27', label: 'North Mugdapara', side: 'right', dx: 92, dy: -8, stopDist: 34 },
+            { nodeId: 'WA-28', label: 'Mugdapara-Maniknogor Bridge', side: 'left', dx: -320, dy: 6, stopDist: 34 },
+            { nodeId: 'WA-35', label: 'City Corp. Adarsha High School', side: 'left', dx: -315, dy: -12, stopDist: 34 },
           ];
 
           return (
@@ -942,12 +1065,12 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
               {renderZoneBadge(zonePtDscc.x, zonePtDscc.y, 'DSCC ZONE 02', 'dscc', occupied)}
 
               {/* Micro-tunneling segments WA-i -> WA-(i+1) & WA-36 -> SPS */}
-              {INITIAL_WA_GEO_NODES.map((gNode, idx) => {
+              {waGeoNodes.map((gNode, idx) => {
                 const p1 = viewport.project(gNode.lat, gNode.lon);
                 const nextGeo =
-                  idx < INITIAL_WA_GEO_NODES.length - 1
-                    ? INITIAL_WA_GEO_NODES[idx + 1]
-                    : GOLAPBAG_SPS_COORD;
+                  idx < waGeoNodes.length - 1
+                    ? waGeoNodes[idx + 1]
+                    : spsCoord;
                 const p2 = viewport.project(nextGeo.lat, nextGeo.lon);
                 const sh = shaftById.get(gNode.id);
                 const mtStatus = sh ? getTunnelStatus(sh) : 'remaining';
@@ -986,7 +1109,8 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   preferredSide: lm.side,
                   baseOffsetX: lm.dx,
                   baseOffsetY: lm.dy,
-                  fontSize: 11.2,
+                  fontSize: 15.0,
+                  stopDist: lm.stopDist,
                   bgFill: '#fffbeb',
                   borderStroke: '#b45309',
                   arrowStroke: '#b45309',
@@ -997,9 +1121,10 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
               {renderHighlightedCallout(spsPt.x, spsPt.y, 'Golapbag Pump Station (SPS)', occupied, mapBounds, {
                 key: 'wa-sps-callout',
                 preferredSide: 'left',
-                baseOffsetX: -240,
-                baseOffsetY: 36,
-                fontSize: 11.8,
+                baseOffsetX: -315,
+                baseOffsetY: 42,
+                fontSize: 15.5,
+                stopDist: 16,
                 bgFill: '#fdf2f8',
                 borderStroke: '#9d174d',
                 textFill: '#831843',
@@ -1024,7 +1149,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
               </g>
 
               {/* WA Shaft + Manhole Nodes & Non-Overlapping Labels */}
-              {INITIAL_WA_GEO_NODES.map((gNode, idx) => {
+              {waGeoNodes.map((gNode, idx) => {
                 const pt = viewport.project(gNode.lat, gNode.lon);
                 const sh = shaftById.get(gNode.id);
                 const shStatus = sh ? getShaftStatus(sh) : 'remaining';
@@ -1068,11 +1193,11 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   pt.x,
                   pt.y,
                   dispName,
-                  8.8,
+                  14.5,
                   occupied,
                   mapBounds,
                   prefSide,
-                  9.5
+                  10.5
                 );
 
                 return (
@@ -1082,46 +1207,49 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                     onClick={() => onSelectShaft?.(gNode.id, 'shaft')}
                   >
                     {viewMode !== 'overall' && (deltaInfo.hasNewLayer || deltaInfo.hasNewMh) && (
-                      <rect x={pt.x - 11} y={pt.y - 11} width={22} height={22} rx={3} fill="none" stroke={GIS_HIGHLIGHT} strokeWidth={2.0} />
+                      <rect x={pt.x - 12} y={pt.y - 12} width={24} height={24} rx={3} fill="none" stroke={GIS_HIGHLIGHT} strokeWidth={2.0} />
                     )}
                     {isSel && (
-                      <rect x={pt.x - 12} y={pt.y - 12} width={24} height={24} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
+                      <rect x={pt.x - 13} y={pt.y - 13} width={26} height={26} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
                     )}
 
                     <rect
-                      x={pt.x - 7.8}
-                      y={pt.y - 7.8}
-                      width={15.6}
-                      height={15.6}
+                      x={pt.x - 8.2}
+                      y={pt.y - 8.2}
+                      width={16.4}
+                      height={16.4}
                       fill="#ffffff"
                       stroke={outerCol}
-                      strokeWidth={2.6}
+                      strokeWidth={2.7}
                     />
                     <circle
                       cx={pt.x}
                       cy={pt.y}
-                      r={4.2}
+                      r={4.4}
                       fill={innerCol}
                       stroke={ringSt === 'ongoing' ? '#0ea5e9' : '#ffffff'}
                       strokeWidth={0.9}
                     />
 
                     {lblPos.leaderNeeded && (
-                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.75} />
+                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.9} />
                     )}
                     <HaloText
                       x={lblPos.x}
                       y={lblPos.y}
                       text={dispName}
-                      fontSize={8.8}
-                      fontWeight="700"
+                      fontSize={14.5}
+                      fontWeight="900"
                       fill="#0f172a"
-                      haloWidth={3.3}
+                      haloWidth={4.5}
                       textAnchor={lblPos.anchor}
                     />
                   </g>
                 );
               })}
+
+              {/* Custom Added Map Points (WA) */}
+              {renderCustomMapPoints(waCustomPoints, viewport, occupied, mapBounds)}
 
               {/* WA Bottom-Left Frosted Legend & Quantitative Table */}
               <g transform={`translate(${legendBox.x0}, ${legendBox.y0})`}>
@@ -1287,12 +1415,16 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
           const wbPct = wbData.totalLengthM > 0 ? (wbData.completedLengthM / wbData.totalLengthM) * 100 : 0;
 
           const occupied: RectBox[] = [legendBox, compassBox, scaleBox];
-          const spsPt = viewport.project(wbData.nodes[0]?.lat ?? 23.719516, wbData.nodes[0]?.lon ?? 90.432657);
+          const spsPt = viewport.project(spsCoord.lat, spsCoord.lon);
           const wbById = new Map(wbData.nodes.map((n) => [n.id, n]));
 
           for (const nd of wbData.nodes) {
             const p = viewport.project(nd.lat, nd.lon);
-            occupied.push({ x0: p.x - 8, y0: p.y - 8, x1: p.x + 8, y1: p.y + 8 });
+            occupied.push({ x0: p.x - 9, y0: p.y - 9, x1: p.x + 9, y1: p.y + 9 });
+          }
+          for (const cp of wbData.customPoints || []) {
+            const p = viewport.project(cp.lat, cp.lon);
+            occupied.push({ x0: p.x - 11, y0: p.y - 11, x1: p.x + 11, y1: p.y + 11 });
           }
           occupied.push({
             x0: spsPt.x - 18,
@@ -1307,29 +1439,43 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
             y1: tipPt.y + 12,
           });
 
-          const washoutNode = wbById.get('WB12');
-          const airValveNode = wbById.get('WB35');
+          const washoutCoord = wbData.washoutCoord || DEFAULT_WASHOUT_COORD;
+          const airValveCoord = wbData.airValveCoord || DEFAULT_AIR_VALVE_COORD;
+          const wb12Node = wbById.get('WB12');
+          const wb35Node = wbById.get('WB35');
           const juncNode = wbById.get('WB38');
 
-          // Reserve prominent Washout & Air Valve highlight rings in occupied
-          if (washoutNode) {
-            const wp = viewport.project(washoutNode.lat, washoutNode.lon);
-            occupied.push({ x0: wp.x - 42, y0: wp.y - 18, x1: wp.x - 8, y1: wp.y + 18 });
-          }
-          if (airValveNode) {
-            const ap = viewport.project(airValveNode.lat, airValveNode.lon);
-            occupied.push({ x0: ap.x - 16, y0: ap.y - 46, x1: ap.x + 16, y1: ap.y - 10 });
-          }
+          const washProj = viewport.project(washoutCoord.lat, washoutCoord.lon);
+          const wb12Proj = wb12Node ? viewport.project(wb12Node.lat, wb12Node.lon) : washProj;
+          const washOffX = Math.hypot(washProj.x - wb12Proj.x, washProj.y - wb12Proj.y) < 18 ? -24 : 0;
+          const wx = washProj.x + washOffX;
+          const wy = washProj.y;
+          occupied.push({ x0: wx - 16, y0: wy - 16, x1: wx + 16, y1: wy + 16 });
+
+          const airProj = viewport.project(airValveCoord.lat, airValveCoord.lon);
+          const wb35Proj = wb35Node ? viewport.project(wb35Node.lat, wb35Node.lon) : airProj;
+          const airOffY = Math.hypot(airProj.x - wb35Proj.x, airProj.y - wb35Proj.y) < 18 ? -26 : 0;
+          const ax = airProj.x;
+          const ay = airProj.y + airOffY;
+          occupied.push({ x0: ax - 16, y0: ay - 16, x1: ax + 16, y1: ay + 16 });
 
           const wbZonePt = viewport.project(23.7145, 90.4272);
 
-          const wbLandmarks: Array<{ id: string; label: string; dx: number; dy: number; side: 'left' | 'right' }> = [
-            { id: 'WB8', label: 'Dhalpur Notun Rasta', dx: 82, dy: -8, side: 'right' },
-            { id: 'WB17', label: 'Boubazar Road', dx: 78, dy: 4, side: 'right' },
-            { id: 'WB24', label: 'Mayor Hanif Flyover', dx: 82, dy: 28, side: 'right' },
-            { id: 'WB27', label: 'Ideal Road', dx: -158, dy: -46, side: 'left' },
-            { id: 'WB32', label: 'Doyagonj Bazar Road', dx: 26, dy: 52, side: 'right' },
-            { id: 'WB38', label: 'Doyagonj Chowrasta (Junc. WD2 & WD3)', dx: -20, dy: 56, side: 'right' },
+          const wbLandmarks: Array<{
+            id: string;
+            label: string;
+            dx: number;
+            dy: number;
+            side: 'left' | 'right';
+            targetCoord?: { lat: number; lon: number };
+            stopDist: number;
+          }> = [
+            { id: 'WB8', label: 'Dhalpur Notun Rasta', dx: -225, dy: -36, side: 'left', targetCoord: { lat: 23.7176, lon: 90.4294 }, stopDist: 10 },
+            { id: 'WB17', label: 'Boubazar Road', dx: 74, dy: 12, side: 'right', targetCoord: { lat: 23.7145, lon: 90.4314 }, stopDist: 10 },
+            { id: 'WB24', label: 'Mayor Hanif Flyover', dx: 68, dy: 34, side: 'right', targetCoord: { lat: 23.7117, lon: 90.4297 }, stopDist: 10 },
+            { id: 'WB27', label: 'Ideal Road', dx: -170, dy: -66, side: 'left', targetCoord: { lat: 23.7116, lon: 90.4275 }, stopDist: 10 },
+            { id: 'WB32', label: 'Doyagonj Bazar Road', dx: 24, dy: 58, side: 'right', targetCoord: { lat: 23.7099, lon: 90.4266 }, stopDist: 10 },
+            { id: 'WB38', label: 'Doyagonj Chowrasta (Junc. WD2 & WD3)', dx: -24, dy: 64, side: 'right', stopDist: 13 },
           ];
 
           return (
@@ -1397,67 +1543,57 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                 </text>
               </g>
 
-              {/* LARGE HIGHLIGHTED WASHOUT & AIR VALVE MARKERS + BOLD ARROWS */}
-              {washoutNode && (() => {
-                const wp = viewport.project(washoutNode.lat, washoutNode.lon);
-                const wx = wp.x - 24;
-                const wy = wp.y;
-                return (
-                  <g>
-                    <circle cx={wx} cy={wy} r={14} fill="#bbf7d0" fillOpacity={0.92} stroke="#15803d" strokeWidth={2.2} />
-                    <polygon points={`${wx},${wy - 9} ${wx - 8},${wy + 6} ${wx + 8},${wy + 6}`} fill="#16a34a" stroke="#ffffff" strokeWidth={1.2} />
-                    {renderHighlightedCallout(wx, wy, 'WASHOUT', occupied, mapBounds, {
-                      key: 'wb-washout-callout',
-                      preferredSide: 'left',
-                      baseOffsetX: -146,
-                      baseOffsetY: 0,
-                      fontSize: 11.4,
-                      bgFill: '#dcfce7',
-                      borderStroke: '#15803d',
-                      textFill: '#14532d',
-                      arrowStroke: '#15803d',
-                    })}
-                  </g>
-                );
-              })()}
-              {airValveNode && (() => {
-                const ap = viewport.project(airValveNode.lat, airValveNode.lon);
-                const ax = ap.x;
-                const ay = ap.y - 26;
-                return (
-                  <g>
-                    <circle cx={ax} cy={ay} r={14} fill="#bae6fd" fillOpacity={0.92} stroke="#0369a1" strokeWidth={2.2} />
-                    <polygon points={`${ax},${ay - 9} ${ax - 8},${ay + 6} ${ax + 8},${ay + 6}`} fill="#0284c7" stroke="#ffffff" strokeWidth={1.2} />
-                    {renderHighlightedCallout(ax, ay, 'AIR VALVE', occupied, mapBounds, {
-                      key: 'wb-airvalve-callout',
-                      preferredSide: 'top',
-                      baseOffsetX: -48,
-                      baseOffsetY: -62,
-                      fontSize: 11.4,
-                      bgFill: '#e0f2fe',
-                      borderStroke: '#0369a1',
-                      textFill: '#0c4a6e',
-                      arrowStroke: '#0369a1',
-                    })}
-                  </g>
-                );
-              })()}
+              {/* LARGE HIGHLIGHTED LIVE WASHOUT & AIR VALVE MARKERS + BOLD ARROWS */}
+              <g>
+                <circle cx={wx} cy={wy} r={14} fill="#bbf7d0" fillOpacity={0.92} stroke="#15803d" strokeWidth={2.2} />
+                <polygon points={`${wx},${wy - 9} ${wx - 8},${wy + 6} ${wx + 8},${wy + 6}`} fill="#16a34a" stroke="#ffffff" strokeWidth={1.2} />
+                {renderHighlightedCallout(wx, wy, 'WASHOUT', occupied, mapBounds, {
+                  key: 'wb-washout-callout',
+                  preferredSide: 'left',
+                  baseOffsetX: -185,
+                  baseOffsetY: 0,
+                  fontSize: 15.5,
+                  stopDist: 16,
+                  bgFill: '#dcfce7',
+                  borderStroke: '#15803d',
+                  textFill: '#14532d',
+                  arrowStroke: '#15803d',
+                })}
+              </g>
+              <g>
+                <circle cx={ax} cy={ay} r={14} fill="#bae6fd" fillOpacity={0.92} stroke="#0369a1" strokeWidth={2.2} />
+                <polygon points={`${ax},${ay - 9} ${ax - 8},${ay + 6} ${ax + 8},${ay + 6}`} fill="#0284c7" stroke="#ffffff" strokeWidth={1.2} />
+                {renderHighlightedCallout(ax, ay, 'AIR VALVE', occupied, mapBounds, {
+                  key: 'wb-airvalve-callout',
+                  preferredSide: 'top',
+                  baseOffsetX: -66,
+                  baseOffsetY: -78,
+                  fontSize: 15.5,
+                  stopDist: 16,
+                  bgFill: '#e0f2fe',
+                  borderStroke: '#0369a1',
+                  textFill: '#0c4a6e',
+                  arrowStroke: '#0369a1',
+                })}
+              </g>
               {juncNode && (() => {
                 const jp = viewport.project(juncNode.lat, juncNode.lon);
                 return <circle cx={jp.x} cy={jp.y} r={10.5} fill="none" stroke="#9333ea" strokeWidth={2.4} />;
               })()}
 
-              {/* Highlighted Corridor Landmark Callouts FIRST so node labels never collide with arrows */}
+              {/* Highlighted Corridor Landmark & Surrounding Road Callouts */}
               {wbLandmarks.map((lm) => {
                 const nd = wbById.get(lm.id);
-                if (!nd) return null;
-                const pt = viewport.project(nd.lat, nd.lon);
+                if (!nd && !lm.targetCoord) return null;
+                const coord = lm.targetCoord || nd!;
+                const pt = viewport.project(coord.lat, coord.lon);
                 return renderHighlightedCallout(pt.x, pt.y, lm.label, occupied, mapBounds, {
                   key: `wb-lm-${lm.id}`,
                   preferredSide: lm.side,
                   baseOffsetX: lm.dx,
                   baseOffsetY: lm.dy,
-                  fontSize: 11.2,
+                  fontSize: 15.0,
+                  stopDist: lm.stopDist,
                   bgFill: '#fffbeb',
                   borderStroke: '#b45309',
                   arrowStroke: '#b45309',
@@ -1499,11 +1635,11 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   pt.x,
                   pt.y,
                   displayLbl,
-                  8.4,
+                  13.5,
                   occupied,
                   mapBounds,
                   prefSide,
-                  8.5
+                  9.8
                 );
 
                 return (
@@ -1513,26 +1649,29 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                     onClick={() => onSelectWbNode?.(n.id)}
                   >
                     {isSel && (
-                      <rect x={pt.x - 10.5} y={pt.y - 10.5} width={21} height={21} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
+                      <rect x={pt.x - 11.5} y={pt.y - 11.5} width={23} height={23} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
                     )}
-                    <rect x={pt.x - 6.2} y={pt.y - 6.2} width={12.4} height={12.4} fill="#ffffff" stroke={col} strokeWidth={2.3} />
-                    <circle cx={pt.x} cy={pt.y} r={2.9} fill={col} />
+                    <rect x={pt.x - 6.8} y={pt.y - 6.8} width={13.6} height={13.6} fill="#ffffff" stroke={col} strokeWidth={2.5} />
+                    <circle cx={pt.x} cy={pt.y} r={3.2} fill={col} />
                     {lblPos.leaderNeeded && (
-                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.7} />
+                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.85} />
                     )}
                     <HaloText
                       x={lblPos.x}
                       y={lblPos.y}
                       text={displayLbl}
-                      fontSize={8.4}
-                      fontWeight="700"
+                      fontSize={13.5}
+                      fontWeight="900"
                       fill="#0f172a"
-                      haloWidth={3.1}
+                      haloWidth={4.2}
                       textAnchor={lblPos.anchor}
                     />
                   </g>
                 );
               })}
+
+              {/* Custom Added Map Points (WB) */}
+              {renderCustomMapPoints(wbData.customPoints, viewport, occupied, mapBounds)}
 
               {/* Blue Completion Tip Marker */}
               <g>
@@ -1651,7 +1790,11 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
 
           for (const gNode of wcData.geoNodes) {
             const p = viewport.project(gNode.lat, gNode.lon);
-            occupied.push({ x0: p.x - 9, y0: p.y - 9, x1: p.x + 9, y1: p.y + 9 });
+            occupied.push({ x0: p.x - 10, y0: p.y - 10, x1: p.x + 10, y1: p.y + 10 });
+          }
+          for (const cp of wcData.customPoints || []) {
+            const p = viewport.project(cp.lat, cp.lon);
+            occupied.push({ x0: p.x - 11, y0: p.y - 11, x1: p.x + 11, y1: p.y + 11 });
           }
 
           const siphonNode = wcGeoById.get('WC-9');
@@ -1660,21 +1803,30 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
 
           if (stpNode) {
             const tp = viewport.project(stpNode.lat, stpNode.lon);
-            occupied.push({ x0: tp.x - 22, y0: tp.y + 12, x1: tp.x + 96, y1: tp.y + 42 });
+            const stpBoxX = Math.min(tp.x - 14, mapX + mapW - 146);
+            occupied.push({ x0: stpBoxX - 2, y0: tp.y + 54, x1: stpBoxX + 140, y1: tp.y + 88 });
           }
 
           const zone5Pt = viewport.project(23.6960, 90.4408);
           const zone10Pt = viewport.project(23.6880, 90.4455);
 
-          const wcLandmarks: Array<{ id: string; label: string; dx: number; dy: number; side: 'left' | 'right' }> = [
-            { id: 'WC-1', label: 'Doyagonj Chowrasta (Start WC-1)', dx: 82, dy: -8, side: 'right' },
-            { id: 'WC-4', label: 'Shahid Faruk Road', dx: 82, dy: 4, side: 'right' },
-            { id: 'WC-9', label: 'Inverted Siphon & Underpass', dx: -230, dy: 4, side: 'left' },
-            { id: 'WC-11', label: 'Gendaria Rail Station (West)', dx: -225, dy: 8, side: 'left' },
-            { id: 'WC-13', label: 'Khandakar Road', dx: 82, dy: -6, side: 'right' },
-            { id: 'WC-15', label: '1st BD-China Friendship Bridge Rd', dx: -245, dy: 8, side: 'left' },
-            { id: 'WC-17', label: 'Jurain Rail Gate / Titas Gas Rd', dx: 82, dy: -6, side: 'right' },
-            { id: 'WC-21', label: 'Shyampur Kadamtoli', dx: -195, dy: 10, side: 'left' },
+          const wcLandmarks: Array<{
+            id: string;
+            label: string;
+            dx: number;
+            dy: number;
+            side: 'left' | 'right';
+            targetCoord?: { lat: number; lon: number };
+            stopDist: number;
+          }> = [
+            { id: 'WC-1', label: 'Doyagonj Chowrasta (Start WC-1)', dx: 90, dy: -10, side: 'right', stopDist: 10 },
+            { id: 'WC-4', label: 'Shahid Faruk Road', dx: 82, dy: 12, side: 'right', targetCoord: { lat: 23.7073, lon: 90.4266 }, stopDist: 10 },
+            { id: 'WC-9', label: 'Inverted Siphon & Underpass', dx: 62, dy: -8, side: 'right', stopDist: 17 },
+            { id: 'WC-11', label: 'Gendaria Rail Station (West)', dx: -295, dy: 8, side: 'left', targetCoord: { lat: 23.6983, lon: 90.4309 }, stopDist: 24 },
+            { id: 'WC-13', label: 'Khandakar Road', dx: 76, dy: -10, side: 'right', targetCoord: { lat: 23.6962, lon: 90.4335 }, stopDist: 10 },
+            { id: 'WC-15', label: '1st BD-China Friendship Bridge Rd', dx: -295, dy: 20, side: 'left', targetCoord: { lat: 23.6939, lon: 90.4328 }, stopDist: 10 },
+            { id: 'WC-17', label: 'Jurain Rail Gate / Titas Gas Rd', dx: 82, dy: -16, side: 'right', targetCoord: { lat: 23.6914, lon: 90.4372 }, stopDist: 10 },
+            { id: 'WC-21', label: 'Shyampur Kadamtoli', dx: -265, dy: 12, side: 'left', stopDist: 34 },
           ];
 
           return (
@@ -1752,36 +1904,39 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
               })()}
               {stpNode && (() => {
                 const tp = viewport.project(stpNode.lat, stpNode.lon);
+                const stpBoxX = Math.min(tp.x - 14, mapX + mapW - 146);
                 return (
                   <g>
                     <rect
-                      x={tp.x - 20}
-                      y={tp.y + 14}
-                      width={112}
-                      height={26}
+                      x={stpBoxX}
+                      y={tp.y + 56}
+                      width={138}
+                      height={30}
                       rx={4}
                       fill="#dbeafe"
                       stroke="#1e3a8a"
                       strokeWidth={2.0}
                     />
-                    <text x={tp.x + 36} y={tp.y + 31} textAnchor="middle" fontSize={9.6} fontWeight="800" fill="#1e3a8a">
+                    <text x={stpBoxX + 69} y={tp.y + 75} textAnchor="middle" fontSize={12.4} fontWeight="900" fill="#1e3a8a">
                       Pagla STP Outfall
                     </text>
                   </g>
                 );
               })()}
 
-              {/* Highlighted WC Landmark Arrow Callouts FIRST so node labels avoid arrows & badges cleanly */}
+              {/* Highlighted WC Landmark & Surrounding Road Callouts */}
               {wcLandmarks.map((lm) => {
                 const g = wcGeoById.get(lm.id);
-                if (!g) return null;
-                const pt = viewport.project(g.lat, g.lon);
+                if (!g && !lm.targetCoord) return null;
+                const coord = lm.targetCoord || g!;
+                const pt = viewport.project(coord.lat, coord.lon);
                 return renderHighlightedCallout(pt.x, pt.y, lm.label, occupied, mapBounds, {
                   key: `wc-lm-${lm.id}`,
                   preferredSide: lm.side,
                   baseOffsetX: lm.dx,
                   baseOffsetY: lm.dy,
-                  fontSize: 11.2,
+                  fontSize: 15.0,
+                  stopDist: lm.stopDist,
                   bgFill: '#fffbeb',
                   borderStroke: '#b45309',
                   arrowStroke: '#b45309',
@@ -1823,11 +1978,11 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                   pt.x,
                   pt.y,
                   gNode.id,
-                  8.8,
+                  14.5,
                   occupied,
                   mapBounds,
                   prefSide,
-                  9.5
+                  10.5
                 );
 
                 return (
@@ -1837,29 +1992,32 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                     onClick={() => onSelectShaft?.(gNode.id, 'shaft')}
                   >
                     {viewMode !== 'overall' && (deltaInfo.hasNewLayer || deltaInfo.hasNewMh) && (
-                      <rect x={pt.x - 11} y={pt.y - 11} width={22} height={22} rx={3} fill="none" stroke={GIS_HIGHLIGHT} strokeWidth={2.0} />
+                      <rect x={pt.x - 12} y={pt.y - 12} width={24} height={24} rx={3} fill="none" stroke={GIS_HIGHLIGHT} strokeWidth={2.0} />
                     )}
                     {isSel && (
-                      <rect x={pt.x - 12} y={pt.y - 12} width={24} height={24} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
+                      <rect x={pt.x - 13} y={pt.y - 13} width={26} height={26} rx={3} fill="none" stroke="#0284c7" strokeWidth={2.2} />
                     )}
-                    <rect x={pt.x - 7.8} y={pt.y - 7.8} width={15.6} height={15.6} fill="#ffffff" stroke={outerCol} strokeWidth={2.6} />
-                    <circle cx={pt.x} cy={pt.y} r={4.2} fill={innerCol} stroke={ringSt === 'ongoing' ? '#0ea5e9' : '#ffffff'} strokeWidth={0.9} />
+                    <rect x={pt.x - 8.2} y={pt.y - 8.2} width={16.4} height={16.4} fill="#ffffff" stroke={outerCol} strokeWidth={2.7} />
+                    <circle cx={pt.x} cy={pt.y} r={4.4} fill={innerCol} stroke={ringSt === 'ongoing' ? '#0ea5e9' : '#ffffff'} strokeWidth={0.9} />
                     {lblPos.leaderNeeded && (
-                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.75} />
+                      <line x1={pt.x} y1={pt.y} x2={lblPos.x} y2={lblPos.y - 2} stroke="#475569" strokeWidth={0.9} />
                     )}
                     <HaloText
                       x={lblPos.x}
                       y={lblPos.y}
                       text={gNode.id}
-                      fontSize={8.8}
-                      fontWeight="700"
+                      fontSize={14.5}
+                      fontWeight="900"
                       fill="#0f172a"
-                      haloWidth={3.3}
+                      haloWidth={4.5}
                       textAnchor={lblPos.anchor}
                     />
                   </g>
                 );
               })}
+
+              {/* Custom Added Map Points (WC) */}
+              {renderCustomMapPoints(wcData.customPoints, viewport, occupied, mapBounds)}
 
               {/* WC Bottom-Left Frosted Legend & Summary Card */}
               <g transform={`translate(${legendBox.x0}, ${legendBox.y0})`}>

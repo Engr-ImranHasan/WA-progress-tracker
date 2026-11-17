@@ -15,9 +15,11 @@ import {
   CheckCircle2,
   Clock,
   CircleDashed,
+  Plus,
 } from 'lucide-react';
 import {
   AppState,
+  CustomMapPoint,
   KmlOverlayLine,
   SheetSettings,
   UiLang,
@@ -32,7 +34,170 @@ import {
   recomputeWbChainages,
 } from '../utils/calculations';
 import { computeWbPolylineSplit, parseKmlOrKmzOrCsvFile } from '../utils/geoMap';
-import { haversineMeters } from '../data/wbcInitialData';
+import {
+  DEFAULT_AIR_VALVE_COORD,
+  DEFAULT_WASHOUT_COORD,
+  haversineMeters,
+} from '../data/wbcInitialData';
+
+interface CustomMapPointsBoxProps {
+  section: 'wa' | 'wb' | 'wc';
+  points: CustomMapPoint[];
+  defaultLat: number;
+  defaultLon: number;
+  lang: UiLang;
+  onAddPoint: (pt: CustomMapPoint) => void;
+  onUpdatePoint: (id: string, patch: Partial<CustomMapPoint>) => void;
+  onDeletePoint: (id: string) => void;
+}
+
+export const CustomMapPointsBox: React.FC<CustomMapPointsBoxProps> = ({
+  section,
+  points,
+  defaultLat,
+  defaultLon,
+  lang,
+  onAddPoint,
+  onUpdatePoint,
+  onDeletePoint,
+}) => {
+  const [name, setName] = useState('');
+  const [latStr, setLatStr] = useState(defaultLat.toFixed(6));
+  const [lonStr, setLonStr] = useState(defaultLon.toFixed(6));
+
+  useEffect(() => {
+    setLatStr(defaultLat.toFixed(6));
+    setLonStr(defaultLon.toFixed(6));
+  }, [section, defaultLat, defaultLon]);
+
+  const handleAdd = () => {
+    const cleanName = name.trim();
+    const lat = Number(latStr);
+    const lon = Number(lonStr);
+    if (!cleanName || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    onAddPoint({
+      id: `pt-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      section,
+      name: cleanName,
+      lat,
+      lon,
+    });
+    setName('');
+  };
+
+  return (
+    <div className="rounded-lg border border-purple-200 bg-purple-50/40 p-2.5 space-y-2 text-xs">
+      <h4 className="flex items-center justify-between font-bold text-purple-950 uppercase tracking-wide">
+        <span className="flex items-center gap-1.5">
+          <MapPin className="h-3.5 w-3.5 text-purple-600" />
+          {lang === 'bn'
+            ? `${section.toUpperCase()} ম্যাপে নতুন পয়েন্ট যোগ করুন`
+            : `Add Custom Point on ${section.toUpperCase()} Map`}
+        </span>
+        <span className="text-[10px] font-semibold text-purple-700">
+          {points.length} {lang === 'bn' ? 'টি' : 'pts'}
+        </span>
+      </h4>
+
+      <div className="space-y-1.5 rounded border border-purple-200 bg-white p-2">
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-600">
+            {lang === 'bn' ? 'পয়েন্টের নাম (Point Name)' : 'Point Name'}
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={lang === 'bn' ? 'যেমন: New Valve / Check Point' : 'e.g. New Valve / Check Point'}
+            aria-label="New Map Point Name"
+            className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs font-semibold"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          <div>
+            <label className="block text-[10px] text-slate-500">Latitude</label>
+            <input
+              type="number"
+              step="0.000001"
+              aria-label="New Map Point Latitude"
+              value={latStr}
+              onChange={(e) => setLatStr(e.target.value)}
+              className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-[11px] font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-slate-500">Longitude</label>
+            <input
+              type="number"
+              step="0.000001"
+              aria-label="New Map Point Longitude"
+              value={lonStr}
+              onChange={(e) => setLonStr(e.target.value)}
+              className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-[11px] font-mono"
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={!name.trim()}
+          className="flex w-full items-center justify-center gap-1 rounded bg-purple-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-purple-700 disabled:opacity-45"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {lang === 'bn' ? '+ ম্যাপে পয়েন্ট যোগ করুন' : '+ Add Point to Map'}
+        </button>
+      </div>
+
+      {points.length > 0 && (
+        <div className="space-y-1.5 max-h-44 overflow-y-auto">
+          {points.map((pt) => (
+            <div
+              key={pt.id}
+              className="rounded border border-purple-200 bg-white p-1.5 space-y-1"
+            >
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={pt.name}
+                  onChange={(e) => onUpdatePoint(pt.id, { name: e.target.value })}
+                  className="flex-1 rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-bold text-slate-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => onDeletePoint(pt.id)}
+                  className="rounded border border-rose-200 bg-rose-50 p-1 text-rose-600 hover:bg-rose-100"
+                  title="Delete Point"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={pt.lat}
+                  onChange={(e) =>
+                    onUpdatePoint(pt.id, { lat: Number(e.target.value) || pt.lat })
+                  }
+                  className="w-full rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-mono"
+                />
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={pt.lon}
+                  onChange={(e) =>
+                    onUpdatePoint(pt.id, { lon: Number(e.target.value) || pt.lon })
+                  }
+                  className="w-full rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-mono"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 function StatusBadge({ status }: { status: WorkStatus }) {
   if (status === 'complete') {
@@ -613,29 +778,7 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold text-slate-500">S. Date</label>
-                  <span className="flex gap-1 text-[9px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateNode(currentNode.id, { sDate: state.settings.reportDate })
-                      }
-                      className="text-blue-600 font-bold hover:underline"
-                    >
-                      RepDate
-                    </button>
-                    {currentNode.sDate && (
-                      <button
-                        type="button"
-                        onClick={() => updateNode(currentNode.id, { sDate: '' })}
-                        className="text-rose-500 font-bold hover:underline"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                </div>
+                <label className="block text-[10px] font-semibold text-slate-500">S. Date</label>
                 <input
                   type="date"
                   value={currentNode.sDate}
@@ -644,29 +787,7 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
                 />
               </div>
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold text-slate-500">E. Date</label>
-                  <span className="flex gap-1 text-[9px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateNode(currentNode.id, { eDate: state.settings.reportDate })
-                      }
-                      className="text-blue-600 font-bold hover:underline"
-                    >
-                      RepDate
-                    </button>
-                    {currentNode.eDate && (
-                      <button
-                        type="button"
-                        onClick={() => updateNode(currentNode.id, { eDate: '' })}
-                        className="text-rose-500 font-bold hover:underline"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                </div>
+                <label className="block text-[10px] font-semibold text-slate-500">E. Date</label>
                 <input
                   type="date"
                   value={currentNode.eDate}
@@ -685,10 +806,11 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
             {/* GPS Coordinates */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <div>
-                <label className="block text-[10px] text-slate-500">Latitude</label>
+                <label className="block text-[10px] text-slate-500">Latitude ({currentNode.id})</label>
                 <input
                   type="number"
                   step="0.000001"
+                  aria-label="WB Node Latitude"
                   value={currentNode.lat}
                   onChange={(e) =>
                     updateNode(currentNode.id, { lat: Number(e.target.value) || currentNode.lat })
@@ -697,10 +819,11 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500">Longitude</label>
+                <label className="block text-[10px] text-slate-500">Longitude ({currentNode.id})</label>
                 <input
                   type="number"
                   step="0.000001"
+                  aria-label="WB Node Longitude"
                   value={currentNode.lon}
                   onChange={(e) =>
                     updateNode(currentNode.id, { lon: Number(e.target.value) || currentNode.lon })
@@ -710,6 +833,140 @@ export const WbEditorPanel: React.FC<WbEditorPanelProps> = ({
               </div>
             </div>
           </div>
+
+          {/* 2B. WASHOUT & AIR VALVE COORDINATES */}
+          <div className="rounded-lg border border-teal-200 bg-teal-50/40 p-2.5 space-y-2 text-xs">
+            <h4 className="flex items-center gap-1.5 font-bold text-teal-950 uppercase tracking-wide">
+              <MapPin className="h-3.5 w-3.5 text-teal-600" />
+              {isBn
+                ? 'Washout ও Air Valve কো-অর্ডিনেট (Auto Map Update)'
+                : 'Washout & Air Valve Coordinates'}
+            </h4>
+            {(() => {
+              const wCoord = wb.washoutCoord || DEFAULT_WASHOUT_COORD;
+              const aCoord = wb.airValveCoord || DEFAULT_AIR_VALVE_COORD;
+              return (
+                <div className="space-y-2">
+                  <div className="rounded border border-emerald-200 bg-white p-2 space-y-1">
+                    <div className="text-[10px] font-bold text-emerald-800">WASHOUT (Green Triangle)</div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <label className="block text-[9px] text-slate-500">Washout Lat</label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          aria-label="Washout Latitude"
+                          value={wCoord.lat}
+                          onChange={(e) =>
+                            onUpdateWb((prev) => ({
+                              ...prev,
+                              washoutCoord: {
+                                lat: Number(e.target.value) || wCoord.lat,
+                                lon: (prev.washoutCoord || wCoord).lon,
+                              },
+                            }))
+                          }
+                          className="w-full rounded border border-slate-300 px-1.5 py-0.5 text-[11px] font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] text-slate-500">Washout Lon</label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          aria-label="Washout Longitude"
+                          value={wCoord.lon}
+                          onChange={(e) =>
+                            onUpdateWb((prev) => ({
+                              ...prev,
+                              washoutCoord: {
+                                lat: (prev.washoutCoord || wCoord).lat,
+                                lon: Number(e.target.value) || wCoord.lon,
+                              },
+                            }))
+                          }
+                          className="w-full rounded border border-slate-300 px-1.5 py-0.5 text-[11px] font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded border border-sky-200 bg-white p-2 space-y-1">
+                    <div className="text-[10px] font-bold text-sky-800">AIR VALVE (Blue Triangle)</div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <label className="block text-[9px] text-slate-500">Air Valve Lat</label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          aria-label="Air Valve Latitude"
+                          value={aCoord.lat}
+                          onChange={(e) =>
+                            onUpdateWb((prev) => ({
+                              ...prev,
+                              airValveCoord: {
+                                lat: Number(e.target.value) || aCoord.lat,
+                                lon: (prev.airValveCoord || aCoord).lon,
+                              },
+                            }))
+                          }
+                          className="w-full rounded border border-slate-300 px-1.5 py-0.5 text-[11px] font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] text-slate-500">Air Valve Lon</label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          aria-label="Air Valve Longitude"
+                          value={aCoord.lon}
+                          onChange={(e) =>
+                            onUpdateWb((prev) => ({
+                              ...prev,
+                              airValveCoord: {
+                                lat: (prev.airValveCoord || aCoord).lat,
+                                lon: Number(e.target.value) || aCoord.lon,
+                              },
+                            }))
+                          }
+                          className="w-full rounded border border-slate-300 px-1.5 py-0.5 text-[11px] font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* 2C. ADD CUSTOM NAMED POINTS ON WB MAP */}
+          <CustomMapPointsBox
+            section="wb"
+            points={wb.customPoints || []}
+            defaultLat={currentNode.lat}
+            defaultLon={currentNode.lon}
+            lang={lang}
+            onAddPoint={(pt) =>
+              onUpdateWb((prev) => ({
+                ...prev,
+                customPoints: [...(prev.customPoints || []), pt],
+              }))
+            }
+            onUpdatePoint={(id, patch) =>
+              onUpdateWb((prev) => ({
+                ...prev,
+                customPoints: (prev.customPoints || []).map((p) =>
+                  p.id === id ? { ...p, ...patch } : p
+                ),
+              }))
+            }
+            onDeletePoint={(id) =>
+              onUpdateWb((prev) => ({
+                ...prev,
+                customPoints: (prev.customPoints || []).filter((p) => p.id !== id),
+              }))
+            }
+          />
 
           {/* 3. MAP STYLE + KML/KMZ UPLOAD */}
           <MapConfigAndKmlBox

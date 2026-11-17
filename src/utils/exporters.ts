@@ -66,17 +66,22 @@ export async function preloadSectionMapSnapshots(state: AppState): Promise<void>
   // Combined side-by-side WC map: x=1296, y=704, w=368, h=464 -> mapX=1300, mapY=723, mapW=360, mapH=441
   const wcCompactVp = buildGeoViewport(state.wc.geoNodes, 1300, 723, 360, 441, 0.12);
 
-  // Full-A1 Portrait GIS Map Pages (Pages 2, 3, 4 in 5-Page PDF: x=44, y=78, w=1100, h=1566, padRatio=0.09, 1120x1594)
+  // Full-A1 Portrait GIS Map Pages (Pages 2, 3, 4 in 5-Page PDF: x=44, y=86, w=1100, h=1558, padRatio=0.09, 1120x1594)
+  const waNodes =
+    state.waGeoNodes && state.waGeoNodes.length > 0
+      ? state.waGeoNodes
+      : INITIAL_WA_GEO_NODES;
+  const spsCoord = state.spsCoord || GOLAPBAG_SPS_COORD;
   const waFullA1Vp = buildGeoViewport(
-    [...INITIAL_WA_GEO_NODES, GOLAPBAG_SPS_COORD],
+    [...waNodes, spsCoord],
     44,
-    78,
+    86,
     1100,
-    1566,
+    1558,
     0.09
   );
-  const wbFullA1Vp = buildGeoViewport(state.wb.nodes, 44, 78, 1100, 1566, 0.09);
-  const wcFullA1Vp = buildGeoViewport(state.wc.geoNodes, 44, 78, 1100, 1566, 0.09);
+  const wbFullA1Vp = buildGeoViewport(state.wb.nodes, 44, 86, 1100, 1558, 0.09);
+  const wcFullA1Vp = buildGeoViewport(state.wc.geoNodes, 44, 86, 1100, 1558, 0.09);
 
   const wbFullW = Math.min(1100, Math.max(480, Math.round(942 * 1.35)));
   const wbFullH = Math.min(1100, Math.max(420, Math.round(896 * 1.35)));

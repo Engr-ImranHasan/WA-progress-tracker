@@ -1,5 +1,7 @@
 import {
   AppState,
+  CustomMapPoint,
+  GeoNodeCoord,
   PeriodBaseline,
   PumpStationData,
   SavedProgressFile,
@@ -10,7 +12,13 @@ import {
   WcSectionData,
   WorkStatus,
 } from '../types';
-import { haversineMeters } from '../data/wbcInitialData';
+import {
+  DEFAULT_AIR_VALVE_COORD,
+  DEFAULT_WASHOUT_COORD,
+  GOLAPBAG_SPS_COORD,
+  haversineMeters,
+  INITIAL_WA_GEO_NODES,
+} from '../data/wbcInitialData';
 
 export const LIVE_WORKSPACE_ID = '__LIVE__';
 
@@ -496,6 +504,13 @@ export function normalizeWbData(
       eDate: n.eDate || '',
       note: n.note || '',
     })),
+    washoutCoord: raw.washoutCoord
+      ? { lat: Number(raw.washoutCoord.lat), lon: Number(raw.washoutCoord.lon) }
+      : { ...(fallback.washoutCoord || DEFAULT_WASHOUT_COORD) },
+    airValveCoord: raw.airValveCoord
+      ? { lat: Number(raw.airValveCoord.lat), lon: Number(raw.airValveCoord.lon) }
+      : { ...(fallback.airValveCoord || DEFAULT_AIR_VALVE_COORD) },
+    customPoints: Array.isArray(raw.customPoints) ? raw.customPoints : [],
     customKmlLines: Array.isArray(raw.customKmlLines) ? raw.customKmlLines : [],
   };
 }
@@ -513,6 +528,7 @@ export function normalizeWcData(
       Array.isArray(raw.geoNodes) && raw.geoNodes.length > 0
         ? raw.geoNodes
         : JSON.parse(JSON.stringify(fallback.geoNodes)),
+    customPoints: Array.isArray(raw.customPoints) ? raw.customPoints : [],
     customKmlLines: Array.isArray(raw.customKmlLines) ? raw.customKmlLines : [],
   };
 }
@@ -522,6 +538,9 @@ export interface DisplayContext {
   displayPump: PumpStationData;
   displayWb: WbSectionData;
   displayWc: WcSectionData;
+  displayWaGeoNodes: GeoNodeCoord[];
+  displaySpsCoord: { lat: number; lon: number };
+  displayWaCustomPoints: CustomMapPoint[];
   baseline: PeriodBaseline;
   file1Label: string;
   file2Label: string;
@@ -529,12 +548,22 @@ export interface DisplayContext {
 }
 
 export function resolveDisplayContext(state: AppState): DisplayContext {
+  const liveWaNodes =
+    state.waGeoNodes && state.waGeoNodes.length > 0
+      ? state.waGeoNodes
+      : INITIAL_WA_GEO_NODES;
+  const liveSps = state.spsCoord || GOLAPBAG_SPS_COORD;
+  const liveWaCustom = state.waCustomPoints || [];
+
   if (state.viewMode === 'overall') {
     return {
       displayShafts: state.shafts,
       displayPump: state.pumpStation,
       displayWb: state.wb,
       displayWc: state.wc,
+      displayWaGeoNodes: liveWaNodes,
+      displaySpsCoord: liveSps,
+      displayWaCustomPoints: liveWaCustom,
       baseline: state.weeklyBaseline,
       file1Label: '',
       file2Label: 'Live Workspace',
@@ -564,6 +593,10 @@ export function resolveDisplayContext(state: AppState): DisplayContext {
       displayPump: file2.pumpStation,
       displayWb: file2.wb,
       displayWc: file2.wc,
+      displayWaGeoNodes:
+        file2.waGeoNodes && file2.waGeoNodes.length > 0 ? file2.waGeoNodes : liveWaNodes,
+      displaySpsCoord: file2.spsCoord || liveSps,
+      displayWaCustomPoints: file2.waCustomPoints || liveWaCustom,
       baseline,
       file1Label,
       file2Label: `${file2.name} (${formatDateDisplay(file2.date)})`,
@@ -576,6 +609,9 @@ export function resolveDisplayContext(state: AppState): DisplayContext {
     displayPump: state.pumpStation,
     displayWb: state.wb,
     displayWc: state.wc,
+    displayWaGeoNodes: liveWaNodes,
+    displaySpsCoord: liveSps,
+    displayWaCustomPoints: liveWaCustom,
     baseline,
     file1Label,
     file2Label: `Current Workspace (${formatDateDisplay(state.settings.reportDate)})`,
@@ -594,6 +630,16 @@ export function sanitizeLoadedState(
   const pumpStation = normalizePumpStation(parsed.pumpStation, fallback.pumpStation);
   const wb = normalizeWbData(parsed.wb, fallback.wb);
   const wc = normalizeWcData(parsed.wc, fallback.wc);
+  const waGeoNodes =
+    Array.isArray(parsed.waGeoNodes) && parsed.waGeoNodes.length > 0
+      ? parsed.waGeoNodes
+      : INITIAL_WA_GEO_NODES.map((n) => ({ ...n }));
+  const spsCoord = parsed.spsCoord
+    ? { lat: Number(parsed.spsCoord.lat), lon: Number(parsed.spsCoord.lon) }
+    : { ...GOLAPBAG_SPS_COORD };
+  const waCustomPoints = Array.isArray(parsed.waCustomPoints)
+    ? parsed.waCustomPoints
+    : [];
 
   const savedFiles: SavedProgressFile[] =
     Array.isArray(parsed.savedFiles) && parsed.savedFiles.length > 0
@@ -603,6 +649,14 @@ export function sanitizeLoadedState(
           pumpStation: normalizePumpStation(f.pumpStation, fallback.pumpStation),
           wb: normalizeWbData(f.wb, fallback.wb),
           wc: normalizeWcData(f.wc, fallback.wc),
+          waGeoNodes:
+            Array.isArray(f.waGeoNodes) && f.waGeoNodes.length > 0
+              ? f.waGeoNodes
+              : INITIAL_WA_GEO_NODES.map((n) => ({ ...n })),
+          spsCoord: f.spsCoord
+            ? { lat: Number(f.spsCoord.lat), lon: Number(f.spsCoord.lon) }
+            : { ...GOLAPBAG_SPS_COORD },
+          waCustomPoints: Array.isArray(f.waCustomPoints) ? f.waCustomPoints : [],
         }))
       : fallback.savedFiles;
 
@@ -614,6 +668,9 @@ export function sanitizeLoadedState(
     pumpStation,
     wb,
     wc,
+    waGeoNodes,
+    spsCoord,
+    waCustomPoints,
     savedFiles,
     activeLoadedFileId: parsed.activeLoadedFileId ?? null,
     weeklyCompare: parsed.weeklyCompare || {

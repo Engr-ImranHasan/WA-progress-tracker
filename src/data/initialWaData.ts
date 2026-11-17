@@ -7,7 +7,12 @@ import {
   SheetSettings,
 } from '../types';
 import { createSnapshotFromState, LIVE_WORKSPACE_ID } from '../utils/calculations';
-import { createInitialWbData, createInitialWcData } from './wbcInitialData';
+import {
+  createInitialWbData,
+  createInitialWcData,
+  GOLAPBAG_SPS_COORD,
+  INITIAL_WA_GEO_NODES,
+} from './wbcInitialData';
 
 export const DEFAULT_COLORS: ColorPalette = {
   overallShaft: '#16c916',
@@ -1370,6 +1375,9 @@ export function createInitialAppState(): AppState {
     pumpStation: JSON.parse(JSON.stringify(INITIAL_PUMP_STATION)),
     wb: JSON.parse(JSON.stringify(wbInit)),
     wc: JSON.parse(JSON.stringify(wcInit)),
+    waGeoNodes: INITIAL_WA_GEO_NODES.map((n) => ({ ...n })),
+    spsCoord: { ...GOLAPBAG_SPS_COORD },
+    waCustomPoints: [],
   };
 
   return {
@@ -1384,6 +1392,9 @@ export function createInitialAppState(): AppState {
     pumpStation: JSON.parse(JSON.stringify(INITIAL_PUMP_STATION)),
     wb: JSON.parse(JSON.stringify(wbInit)),
     wc: JSON.parse(JSON.stringify(wcInit)),
+    waGeoNodes: INITIAL_WA_GEO_NODES.map((n) => ({ ...n })),
+    spsCoord: { ...GOLAPBAG_SPS_COORD },
+    waCustomPoints: [],
     savedFiles: [initialSavedFile],
     activeLoadedFileId: null,
     weeklyCompare: {

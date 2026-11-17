@@ -44,6 +44,8 @@ export const INITIAL_WA_GEO_NODES: Array<{ id: string; lat: number; lon: number 
   RAW_WA_COORDS.map(([id, lat, lon]) => ({ id, lat, lon }));
 
 export const GOLAPBAG_SPS_COORD = { lat: 23.7195161, lon: 90.4326567 };
+export const DEFAULT_WASHOUT_COORD = { lat: 23.7174873, lon: 90.43072 };
+export const DEFAULT_AIR_VALVE_COORD = { lat: 23.71053, lon: 90.4245374 };
 
 const RAW_WB_COORDS: Array<[string, number, number]> = [
   ['WB1', 23.7195161, 90.4326567],
@@ -170,6 +172,9 @@ export function createInitialWbData(): WbSectionData {
     totalLengthM: totalTargetM,
     completedLengthM: initialCompletedM,
     nodes,
+    washoutCoord: { ...DEFAULT_WASHOUT_COORD },
+    airValveCoord: { ...DEFAULT_AIR_VALVE_COORD },
+    customPoints: [],
     customKmlLines: [],
   };
 }
@@ -231,6 +236,7 @@ export function createInitialWcData(): WcSectionData {
   return {
     shafts,
     geoNodes,
+    customPoints: [],
     customKmlLines: [],
   };
 }

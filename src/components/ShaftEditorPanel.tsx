@@ -15,6 +15,7 @@ import {
   Search,
   Building2,
   FileText,
+  MapPin,
 } from 'lucide-react';
 import {
   AppState,
@@ -39,8 +40,12 @@ import {
   resizeShaftLayers,
 } from '../utils/calculations';
 import { DEFAULT_COLORS } from '../data/initialWaData';
-import { createInitialWcData } from '../data/wbcInitialData';
-import { applyKmlToWc, MapConfigAndKmlBox } from './WbWcEditors';
+import {
+  createInitialWcData,
+  GOLAPBAG_SPS_COORD,
+  INITIAL_WA_GEO_NODES,
+} from '../data/wbcInitialData';
+import { applyKmlToWc, CustomMapPointsBox, MapConfigAndKmlBox } from './WbWcEditors';
 
 interface ShaftEditorPanelProps {
   state: AppState;
@@ -406,99 +411,6 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               <span className="text-[11px] font-bold text-teal-700">Open →</span>
             </button>
           )}
-          {!isPumpSelected && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50/90 p-2 space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 uppercase tracking-wide">
-                <span>{lang === 'bn' ? '⚡ দ্রুত ইনপুট (১-ক্লিক প্রিসেট)' : '⚡ Quick Presets (1-Click)'}</span>
-                {(() => {
-                  const nextInc = shaftsList.find(
-                    (x) =>
-                      x.id !== shaft.id &&
-                      (getShaftStatus(x) !== 'complete' ||
-                        getManholeStatus(x) !== 'complete' ||
-                        getTunnelStatus(x) !== 'complete')
-                  );
-                  return nextInc ? (
-                    <button
-                      onClick={() => onSelectShaft(nextInc.id)}
-                      className="rounded border border-blue-300 bg-white px-1.5 py-0.5 text-[10px] font-bold text-blue-700 hover:bg-blue-50"
-                    >
-                      {lang === 'bn' ? `বাকি → ${nextInc.id}` : `Next Rem → ${nextInc.id}`}
-                    </button>
-                  ) : null;
-                })()}
-              </div>
-              <div className="grid grid-cols-5 gap-1 text-[10px]">
-                <button
-                  onClick={() =>
-                    onUpdateShaft(shaft.id, {
-                      layerFlags: Array(shaft.totalLayers).fill(true),
-                      bottomSlabDone: true,
-                    })
-                  }
-                  className="rounded border border-emerald-300 bg-emerald-50 py-1 font-bold text-emerald-800 hover:bg-emerald-100"
-                >
-                  Shaft 100%
-                </button>
-                <button
-                  onClick={() =>
-                    onUpdateShaft(shaft.id, { castingPct: 100, precastPct: 100 })
-                  }
-                  className="rounded border border-blue-300 bg-blue-50 py-1 font-bold text-blue-800 hover:bg-blue-100"
-                >
-                  MH 100%
-                </button>
-                <button
-                  onClick={() => {
-                    setPctDraft(null);
-                    setLenMDraft(null);
-                    onUpdateShaft(shaft.id, { tunnelPct: 100 });
-                  }}
-                  className="rounded border border-fuchsia-300 bg-fuchsia-50 py-1 font-bold text-fuchsia-800 hover:bg-fuchsia-100"
-                >
-                  MT 100%
-                </button>
-                <button
-                  onClick={() => {
-                    setPctDraft(null);
-                    setLenMDraft(null);
-                    onUpdateShaft(shaft.id, {
-                      layerFlags: Array(shaft.totalLayers).fill(true),
-                      bottomSlabDone: true,
-                      castingPct: 100,
-                      precastPct: 100,
-                      tunnelPct: 100,
-                    });
-                  }}
-                  className="rounded border border-emerald-700 bg-emerald-600 py-1 font-bold text-white hover:bg-emerald-700"
-                >
-                  All ✓
-                </button>
-                <button
-                  onClick={() => {
-                    setPctDraft(null);
-                    setLenMDraft(null);
-                    onUpdateShaft(shaft.id, {
-                      layerFlags: Array(shaft.totalLayers).fill(false),
-                      bottomSlabDone: false,
-                      castingPct: 0,
-                      precastPct: 0,
-                      tunnelPct: 0,
-                      shaftSDate: '',
-                      shaftEDate: '',
-                      manholeSDate: '',
-                      manholeEDate: '',
-                      tunnelSDate: '',
-                      tunnelEDate: '',
-                    });
-                  }}
-                  className="rounded border border-rose-300 bg-white py-1 font-bold text-rose-700 hover:bg-rose-50"
-                >
-                  Clear ✕
-                </button>
-              </div>
-            </div>
-          )}
           {isWc && (
             <div className="flex items-center justify-between rounded-md border border-purple-200 bg-purple-50/70 px-2.5 py-1.5 text-[11px] text-purple-950">
               <span className="font-semibold">
@@ -840,6 +752,61 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                     );
                   })}
                 </div>
+
+                {/* Golapbag SPS Map Coordinates */}
+                {(() => {
+                  const sps = state.spsCoord || GOLAPBAG_SPS_COORD;
+                  return (
+                    <div className="rounded-md border border-pink-200 bg-pink-50/40 p-2 space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-pink-950">
+                        <MapPin className="h-3.5 w-3.5 text-pink-700" />
+                        {lang === 'bn'
+                          ? 'Golapbag SPS ম্যাপ কো-অর্ডিনেট'
+                          : 'Golapbag SPS Map Coordinates'}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[9px] text-slate-500">SPS Latitude</label>
+                          <input
+                            type="number"
+                            step="0.000001"
+                            aria-label="Golapbag SPS Latitude"
+                            value={sps.lat}
+                            onChange={(e) =>
+                              onUpdateState((prev) => ({
+                                ...prev,
+                                spsCoord: {
+                                  lat: Number(e.target.value) || sps.lat,
+                                  lon: (prev.spsCoord || sps).lon,
+                                },
+                              }))
+                            }
+                            className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-slate-500">SPS Longitude</label>
+                          <input
+                            type="number"
+                            step="0.000001"
+                            aria-label="Golapbag SPS Longitude"
+                            value={sps.lon}
+                            onChange={(e) =>
+                              onUpdateState((prev) => ({
+                                ...prev,
+                                spsCoord: {
+                                  lat: (prev.spsCoord || sps).lat,
+                                  lon: Number(e.target.value) || sps.lon,
+                                },
+                              }))
+                            }
+                            className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ) : (
@@ -1015,31 +982,9 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
             {/* Shaft Dates & Auto Duration */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold text-slate-500">
-                    {L.sDate}
-                  </label>
-                  <span className="flex gap-1 text-[9px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateShaft(shaft.id, { shaftSDate: state.settings.reportDate })
-                      }
-                      className="text-blue-600 font-bold hover:underline"
-                    >
-                      RepDate
-                    </button>
-                    {shaft.shaftSDate && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdateShaft(shaft.id, { shaftSDate: '' })}
-                        className="text-rose-500 font-bold hover:underline"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                </div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.sDate}
+                </label>
                 <input
                   type="date"
                   value={shaft.shaftSDate}
@@ -1050,31 +995,9 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 />
               </div>
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold text-slate-500">
-                    {L.eDate}
-                  </label>
-                  <span className="flex gap-1 text-[9px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateShaft(shaft.id, { shaftEDate: state.settings.reportDate })
-                      }
-                      className="text-blue-600 font-bold hover:underline"
-                    >
-                      RepDate
-                    </button>
-                    {shaft.shaftEDate && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdateShaft(shaft.id, { shaftEDate: '' })}
-                        className="text-rose-500 font-bold hover:underline"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                </div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.eDate}
+                </label>
                 <input
                   type="date"
                   value={shaft.shaftEDate}
@@ -1292,31 +1215,9 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
             {/* Manhole Dates */}
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold text-slate-500">
-                    {L.sDate}
-                  </label>
-                  <span className="flex gap-1 text-[9px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateShaft(shaft.id, { manholeSDate: state.settings.reportDate })
-                      }
-                      className="text-blue-600 font-bold hover:underline"
-                    >
-                      RepDate
-                    </button>
-                    {shaft.manholeSDate && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdateShaft(shaft.id, { manholeSDate: '' })}
-                        className="text-rose-500 font-bold hover:underline"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                </div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.sDate}
+                </label>
                 <input
                   type="date"
                   value={shaft.manholeSDate}
@@ -1327,31 +1228,9 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 />
               </div>
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold text-slate-500">
-                    {L.eDate}
-                  </label>
-                  <span className="flex gap-1 text-[9px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateShaft(shaft.id, { manholeEDate: state.settings.reportDate })
-                      }
-                      className="text-blue-600 font-bold hover:underline"
-                    >
-                      RepDate
-                    </button>
-                    {shaft.manholeEDate && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdateShaft(shaft.id, { manholeEDate: '' })}
-                        className="text-rose-500 font-bold hover:underline"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                </div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.eDate}
+                </label>
                 <input
                   type="date"
                   value={shaft.manholeEDate}
@@ -1603,31 +1482,9 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
             {/* Tunnel Dates */}
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold text-slate-500">
-                    {L.sDate}
-                  </label>
-                  <span className="flex gap-1 text-[9px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateShaft(shaft.id, { tunnelSDate: state.settings.reportDate })
-                      }
-                      className="text-blue-600 font-bold hover:underline"
-                    >
-                      RepDate
-                    </button>
-                    {shaft.tunnelSDate && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdateShaft(shaft.id, { tunnelSDate: '' })}
-                        className="text-rose-500 font-bold hover:underline"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                </div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.sDate}
+                </label>
                 <input
                   type="date"
                   value={shaft.tunnelSDate}
@@ -1638,31 +1495,9 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
                 />
               </div>
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-semibold text-slate-500">
-                    {L.eDate}
-                  </label>
-                  <span className="flex gap-1 text-[9px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateShaft(shaft.id, { tunnelEDate: state.settings.reportDate })
-                      }
-                      className="text-blue-600 font-bold hover:underline"
-                    >
-                      RepDate
-                    </button>
-                    {shaft.tunnelEDate && (
-                      <button
-                        type="button"
-                        onClick={() => onUpdateShaft(shaft.id, { tunnelEDate: '' })}
-                        className="text-rose-500 font-bold hover:underline"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                </div>
+                <label className="block text-[10px] font-semibold text-slate-500">
+                  {L.eDate}
+                </label>
                 <input
                   type="date"
                   value={shaft.tunnelEDate}
@@ -1684,6 +1519,177 @@ export const ShaftEditorPanel: React.FC<ShaftEditorPanelProps> = ({
               </span>
             </div>
           </div>
+
+          {/* SECTION 4: POINT MAP COORDINATES + ADD CUSTOM POINT */}
+          {(() => {
+            const waList =
+              state.waGeoNodes && state.waGeoNodes.length > 0
+                ? state.waGeoNodes
+                : INITIAL_WA_GEO_NODES;
+            const curGeo = isWc
+              ? state.wc.geoNodes.find((g) => g.id === shaft.id) || state.wc.geoNodes[0]
+              : waList.find((g) => g.id === shaft.id) || waList[0];
+            return (
+              <div className="space-y-3">
+                {curGeo && (
+                  <div className="rounded-lg border border-sky-200 bg-sky-50/40 p-3 shadow-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="flex items-center gap-1.5 text-xs font-bold text-sky-950 uppercase tracking-wide">
+                        <MapPin className="h-3.5 w-3.5 text-sky-600" />
+                        {lang === 'bn'
+                          ? `${shaft.id} ম্যাপ কো-অর্ডিনেট (Auto Update)`
+                          : `${shaft.id} Map Coordinates (Auto Update)`}
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-500">
+                          Latitude ({shaft.id})
+                        </label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          aria-label={`${shaft.id} Latitude`}
+                          value={curGeo.lat}
+                          onChange={(e) => {
+                            const nextLat = Number(e.target.value);
+                            if (!Number.isFinite(nextLat)) return;
+                            if (isWc) {
+                              onUpdateState((prev) => ({
+                                ...prev,
+                                wc: {
+                                  ...prev.wc,
+                                  geoNodes: prev.wc.geoNodes.map((g) =>
+                                    g.id === shaft.id ? { ...g, lat: nextLat } : g
+                                  ),
+                                },
+                              }));
+                            } else {
+                              onUpdateState((prev) => {
+                                const base =
+                                  prev.waGeoNodes && prev.waGeoNodes.length > 0
+                                    ? prev.waGeoNodes
+                                    : INITIAL_WA_GEO_NODES.map((x) => ({ ...x }));
+                                return {
+                                  ...prev,
+                                  waGeoNodes: base.map((g) =>
+                                    g.id === shaft.id ? { ...g, lat: nextLat } : g
+                                  ),
+                                };
+                              });
+                            }
+                          }}
+                          className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-500">
+                          Longitude ({shaft.id})
+                        </label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          aria-label={`${shaft.id} Longitude`}
+                          value={curGeo.lon}
+                          onChange={(e) => {
+                            const nextLon = Number(e.target.value);
+                            if (!Number.isFinite(nextLon)) return;
+                            if (isWc) {
+                              onUpdateState((prev) => ({
+                                ...prev,
+                                wc: {
+                                  ...prev.wc,
+                                  geoNodes: prev.wc.geoNodes.map((g) =>
+                                    g.id === shaft.id ? { ...g, lon: nextLon } : g
+                                  ),
+                                },
+                              }));
+                            } else {
+                              onUpdateState((prev) => {
+                                const base =
+                                  prev.waGeoNodes && prev.waGeoNodes.length > 0
+                                    ? prev.waGeoNodes
+                                    : INITIAL_WA_GEO_NODES.map((x) => ({ ...x }));
+                                return {
+                                  ...prev,
+                                  waGeoNodes: base.map((g) =>
+                                    g.id === shaft.id ? { ...g, lon: nextLon } : g
+                                  ),
+                                };
+                              });
+                            }
+                          }}
+                          className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <CustomMapPointsBox
+                  section={isWc ? 'wc' : 'wa'}
+                  points={
+                    isWc ? state.wc.customPoints || [] : state.waCustomPoints || []
+                  }
+                  defaultLat={curGeo ? curGeo.lat : 23.735}
+                  defaultLon={curGeo ? curGeo.lon : 90.432}
+                  lang={lang}
+                  onAddPoint={(pt) => {
+                    if (isWc) {
+                      onUpdateState((p) => ({
+                        ...p,
+                        wc: {
+                          ...p.wc,
+                          customPoints: [...(p.wc.customPoints || []), pt],
+                        },
+                      }));
+                    } else {
+                      onUpdateState((p) => ({
+                        ...p,
+                        waCustomPoints: [...(p.waCustomPoints || []), pt],
+                      }));
+                    }
+                  }}
+                  onUpdatePoint={(id, patch) => {
+                    if (isWc) {
+                      onUpdateState((p) => ({
+                        ...p,
+                        wc: {
+                          ...p.wc,
+                          customPoints: (p.wc.customPoints || []).map((x) =>
+                            x.id === id ? { ...x, ...patch } : x
+                          ),
+                        },
+                      }));
+                    } else {
+                      onUpdateState((p) => ({
+                        ...p,
+                        waCustomPoints: (p.waCustomPoints || []).map((x) =>
+                          x.id === id ? { ...x, ...patch } : x
+                        ),
+                      }));
+                    }
+                  }}
+                  onDeletePoint={(id) => {
+                    if (isWc) {
+                      onUpdateState((p) => ({
+                        ...p,
+                        wc: {
+                          ...p.wc,
+                          customPoints: (p.wc.customPoints || []).filter((x) => x.id !== id),
+                        },
+                      }));
+                    } else {
+                      onUpdateState((p) => ({
+                        ...p,
+                        waCustomPoints: (p.waCustomPoints || []).filter((x) => x.id !== id),
+                      }));
+                    }
+                  }}
+                />
+              </div>
+            );
+          })()}
 
           {/* Optional Baseline Manual Adjustment (for Weekly/Monthly mode) */}
           {state.viewMode !== 'overall' && bSnap && (

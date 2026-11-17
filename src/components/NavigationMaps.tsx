@@ -8,6 +8,7 @@ import {
   WorkStatus,
 } from '../types';
 import { getShaftStatus, getTunnelStatus } from '../utils/calculations';
+import { DEFAULT_AIR_VALVE_COORD, DEFAULT_WASHOUT_COORD } from '../data/wbcInitialData';
 import {
   buildGeoViewport,
   computeWbPolylineSplit,
@@ -131,14 +132,25 @@ export const WbNavigationMapGroup: React.FC<WbMapProps> = ({
         stroke="#1e3a8a"
         strokeWidth={0.8}
       />
+      <rect x={x + 4} y={y + 2.5} width={compact ? 26 : 32} height={padTop - 5} rx={3} fill="#1d4ed8" />
       <text
-        x={x + 7}
-        y={y + (compact ? 13 : 17)}
-        fontSize={isNarrow ? 6.5 : compact ? 7.2 : 10}
-        fontWeight="700"
+        x={x + (compact ? 17 : 20)}
+        y={y + (compact ? 13 : 17.5)}
+        textAnchor="middle"
+        fontSize={compact ? 9.5 : 11.5}
+        fontWeight="900"
+        fill="#ffffff"
+      >
+        WB
+      </text>
+      <text
+        x={x + (compact ? 34 : 42)}
+        y={y + (compact ? 13 : 17.5)}
+        fontSize={isNarrow ? 8.2 : compact ? 9.0 : 11.5}
+        fontWeight="800"
         fill="#1e3a8a"
       >
-        {isNarrow ? `WB MAP (${wb.pipeDia} ${wb.method})` : `WB SECTION (${wb.method} ${wb.pipeDia})`}
+        {isNarrow ? `(${wb.pipeDia})` : `SECTION (${wb.method} ${wb.pipeDia})`}
       </text>
       <text
         x={x + w - 7}
@@ -365,6 +377,37 @@ export const WbNavigationMapGroup: React.FC<WbMapProps> = ({
           </text>
         </g>
 
+        {/* Live Washout & Air Valve Pins on Mini WB Map */}
+        {(() => {
+          const wp = viewport.project(
+            (wb.washoutCoord || DEFAULT_WASHOUT_COORD).lat,
+            (wb.washoutCoord || DEFAULT_WASHOUT_COORD).lon
+          );
+          const ap = viewport.project(
+            (wb.airValveCoord || DEFAULT_AIR_VALVE_COORD).lat,
+            (wb.airValveCoord || DEFAULT_AIR_VALVE_COORD).lon
+          );
+          return (
+            <g>
+              <circle cx={wp.x} cy={wp.y} r={compact ? 4.5 : 6.5} fill="#bbf7d0" stroke="#15803d" strokeWidth={1.1} />
+              <polygon points={`${wp.x},${wp.y - 3.5} ${wp.x - 3},${wp.y + 2.5} ${wp.x + 3},${wp.y + 2.5}`} fill="#16a34a" />
+              <circle cx={ap.x} cy={ap.y} r={compact ? 4.5 : 6.5} fill="#bae6fd" stroke="#0369a1" strokeWidth={1.1} />
+              <polygon points={`${ap.x},${ap.y - 3.5} ${ap.x - 3},${ap.y + 2.5} ${ap.x + 3},${ap.y + 2.5}`} fill="#0284c7" />
+              {(wb.customPoints || []).map((cp) => {
+                const cpp = viewport.project(cp.lat, cp.lon);
+                return (
+                  <g key={cp.id}>
+                    <circle cx={cpp.x} cy={cpp.y} r={compact ? 4.2 : 5.5} fill="#f3e8ff" stroke="#7e22ce" strokeWidth={1.2} />
+                    <text x={cpp.x + 6} y={cpp.y + 2} fontSize={compact ? 5.2 : 6.8} fontWeight="800" fill="#581c87">
+                      {cp.name}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          );
+        })()}
+
         {/* North Arrow & Mini Legend inside Map */}
         <g transform={`translate(${mapX + mapW - (compact ? 20 : 28)}, ${mapY + (compact ? 18 : 24)})`}>
           <circle cx={0} cy={0} r={compact ? 9 : 13} fill="#ffffff" fillOpacity={0.88} stroke="#475569" strokeWidth={0.7} />
@@ -495,14 +538,25 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
         stroke="#1e3a8a"
         strokeWidth={0.8}
       />
+      <rect x={x + 4} y={y + 2.5} width={compact ? 26 : 32} height={padTop - 5} rx={3} fill="#7e22ce" />
       <text
-        x={x + 7}
-        y={y + (compact ? 13 : 16)}
-        fontSize={isNarrow ? 6.5 : compact ? 7.2 : 9.2}
-        fontWeight="700"
-        fill="#1e3a8a"
+        x={x + (compact ? 17 : 20)}
+        y={y + (compact ? 13 : 17.5)}
+        textAnchor="middle"
+        fontSize={compact ? 9.5 : 11.5}
+        fontWeight="900"
+        fill="#ffffff"
       >
-        {isNarrow ? 'WC MAP (MICRO-TUNNEL WC-1..27)' : 'WC SECTION (MICRO-TUNNELLING CORRIDOR — WC-1 TO WC-27)'}
+        WC
+      </text>
+      <text
+        x={x + (compact ? 34 : 42)}
+        y={y + (compact ? 13 : 17.5)}
+        fontSize={isNarrow ? 8.2 : compact ? 9.0 : 11.2}
+        fontWeight="800"
+        fill="#581c87"
+      >
+        {isNarrow ? '(WC-1..WC-27)' : 'SECTION (MICRO-TUNNEL WC-1 TO WC-27)'}
       </text>
       <text
         x={x + w - 7}
@@ -661,6 +715,19 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
             );
           });
         })()}
+
+        {/* Custom Added Points on Mini WC Map */}
+        {(wc.customPoints || []).map((cp) => {
+          const cpp = viewport.project(cp.lat, cp.lon);
+          return (
+            <g key={cp.id}>
+              <circle cx={cpp.x} cy={cpp.y} r={compact ? 4.2 : 5.5} fill="#f3e8ff" stroke="#7e22ce" strokeWidth={1.2} />
+              <text x={cpp.x + 6} y={cpp.y + 2} fontSize={compact ? 5.2 : 6.8} fontWeight="800" fill="#581c87">
+                {cp.name}
+              </text>
+            </g>
+          );
+        })}
 
         {/* North arrow */}
         <g transform={`translate(${mapX + mapW - 18}, ${mapY + 18})`}>

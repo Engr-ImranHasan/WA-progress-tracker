@@ -1,12 +1,7 @@
 export type WorkStatus = 'remaining' | 'ongoing' | 'complete';
 export type ViewMode = 'overall' | 'weekly' | 'monthly';
-export type SectionTab = 'wa' | 'wb' | 'wc' | 'combined';
-export type PdfSheetKey =
-  | SectionTab
-  | 'wa-map'
-  | 'wb-map'
-  | 'wc-map'
-  | 'wc-status';
+export type SectionTab = 'wa' | 'wb' | 'wc' | 'combined' | 'wa-map' | 'wb-map' | 'wc-map';
+export type PdfSheetKey = SectionTab | 'wc-status';
 export type LayoutMode = '10col' | '12col';
 export type UiLang = 'bn' | 'en';
 export type PipeDia =
@@ -89,12 +84,29 @@ export interface KmlOverlayLine {
   coords: Array<[number, number]>; // [lat, lon]
 }
 
+export interface GeoNodeCoord {
+  id: string;
+  lat: number;
+  lon: number;
+}
+
+export interface CustomMapPoint {
+  id: string;
+  section: 'wa' | 'wb' | 'wc';
+  name: string;
+  lat: number;
+  lon: number;
+}
+
 export interface WbSectionData {
   pipeDia: string;
   method: string;
   totalLengthM: number;
   completedLengthM: number;
   nodes: WbNodeRecord[];
+  washoutCoord?: { lat: number; lon: number };
+  airValveCoord?: { lat: number; lon: number };
+  customPoints?: CustomMapPoint[];
   customKmlLines?: KmlOverlayLine[];
 }
 
@@ -107,6 +119,7 @@ export interface WcGeoNode {
 export interface WcSectionData {
   shafts: ShaftRecord[];
   geoNodes: WcGeoNode[];
+  customPoints?: CustomMapPoint[];
   customKmlLines?: KmlOverlayLine[];
 }
 
@@ -121,6 +134,9 @@ export interface SavedProgressFile {
   pumpStation: PumpStationData;
   wb: WbSectionData;
   wc: WcSectionData;
+  waGeoNodes?: GeoNodeCoord[];
+  spsCoord?: { lat: number; lon: number };
+  waCustomPoints?: CustomMapPoint[];
 }
 
 export interface ShaftSnapshotItem {
@@ -214,6 +230,9 @@ export interface AppState {
   pumpStation: PumpStationData;
   wb: WbSectionData;
   wc: WcSectionData;
+  waGeoNodes?: GeoNodeCoord[];
+  spsCoord?: { lat: number; lon: number };
+  waCustomPoints?: CustomMapPoint[];
   savedFiles: SavedProgressFile[];
   activeLoadedFileId: string | null;
   weeklyCompare: ComparePairSelection;
