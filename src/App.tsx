@@ -19,7 +19,6 @@ import {
   Pencil,
   Plus,
   Printer,
-  RotateCcw,
   Save,
   Trash2,
   Upload,
@@ -102,6 +101,7 @@ export function App() {
   const [zoom, setZoom] = useState<number>(1);
   const [showInspector, setShowInspector] = useState<boolean>(true);
   const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
+  const [showSavedTime, setShowSavedTime] = useState<boolean>(false);
   const [requestedEditorTab, setRequestedEditorTab] = useState<{
     tab: 'single' | 'table' | 'settings';
     seq: number;
@@ -476,7 +476,8 @@ export function App() {
         return;
       }
       if (kind === 'dxf') {
-        exportAutoCadDxf(state, `WABC-Progress-A1-${secTag}-${dateTag}.dxf`);
+        const dxfTargetSvg = customSvg || svgRef.current;
+        exportAutoCadDxf(state, `WABC-Progress-A1-${secTag}-${dateTag}.dxf`, dxfTargetSvg);
         showToast(isBn ? 'AutoCAD DXF এক্সপোর্ট হয়েছে!' : 'AutoCAD DXF exported!');
         return;
       }
@@ -610,20 +611,6 @@ export function App() {
     }
   };
 
-  const handleResetToPdf = () => {
-    if (
-      window.confirm(
-        isBn
-          ? 'আপনি কি নিশ্চিত যে আপনার সব এডিট মুছে মূল PDF-এর অবস্থায় ফিরে যেতে চান?'
-          : 'Reset all sections (WA, WB, WC) back to the initial PDF baseline?'
-      )
-    ) {
-      const fresh = createInitialAppState();
-      setState(fresh);
-      showToast(isBn ? 'মূল PDF ডাটায় রিসেট হয়েছে।' : 'Reset to PDF baseline.');
-    }
-  };
-
   const savedTimeStr = (() => {
     try {
       return new Date(state.lastSavedAt).toLocaleTimeString([], {
@@ -711,33 +698,53 @@ export function App() {
         onChange={handleJsonRestore}
       />
 
-      {/* ==================== TOP HEADER TOOLBAR ==================== */}
-      <header className="no-print z-30 flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-slate-900 px-3 py-2 text-white shadow-sm">
-        {/* Brand & Autosave Status */}
-        <div className="flex items-center gap-2">
-          <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wider">
-            A1 CAD
-          </span>
-          <h1 className="text-sm font-bold tracking-tight">WABC Progress Studio</h1>
-          <span className="hidden xl:inline-flex items-center gap-1 rounded-full bg-emerald-950/90 border border-emerald-500/40 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
-            <Check className="h-3 w-3" />
-            {isBn ? 'অটো-সেভড' : 'Auto-saved'} {savedTimeStr}
-          </span>
+      {/* ==================== SINGLE-LINE TOP HEADER TOOLBAR ==================== */}
+      <header className="no-print z-30 flex flex-nowrap items-center justify-between gap-2 border-b border-slate-700/80 bg-slate-900 px-3 py-1.5 text-white shadow-sm">
+        {/* Brand & Compact Green Autosave Tick (Click to view saved timestamp) */}
+        <div className="relative flex shrink-0 items-center gap-1.5">
+          <h1 className="whitespace-nowrap text-[13px] font-bold tracking-tight text-white">
+            WABC Progress Studio
+          </h1>
+          <button
+            type="button"
+            onClick={() => setShowSavedTime((v) => !v)}
+            title={
+              isBn
+                ? `অটো-সেভড: ${savedTimeStr} (সময় দেখতে ক্লিক করুন)`
+                : `Auto-saved: ${savedTimeStr} (Click to view time)`
+            }
+            aria-label="Auto-save status"
+            className="relative z-50 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/35 transition"
+          >
+            <Check className="h-3 w-3 stroke-[2.8]" />
+          </button>
+
+          {showSavedTime && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowSavedTime(false)}
+              />
+              <div className="absolute left-0 top-7 z-50 whitespace-nowrap rounded-md border border-emerald-500/40 bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-300 shadow-lg">
+                ✓ {isBn ? 'অটো-সেভড:' : 'Auto-saved:'} {savedTimeStr}
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Section Tabs: WA | WB | WC | Combined | Custom + Portrait GIS Maps */}
-        <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-800 p-1">
+        {/* Section Tabs: WA | WB | WC | Combined | Custom | WA Map | WB Map | WC Map */}
+        <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-700/70 bg-slate-800/95 p-0.5">
           {(
             [
-              { id: 'wa', label: 'WA', sub: '37 + SPS' },
-              { id: 'wb', label: 'WB', sub: 'Open Cut' },
-              { id: 'wc', label: 'WC', sub: '27 Shafts' },
-              { id: 'combined', label: isBn ? 'Combined (একসাথে)' : 'Combined', sub: 'WA+WB+WC' },
-              { id: 'custom', label: 'Custom', sub: 'WA / WC' },
-              { id: 'wa-map', label: 'WA Map', sub: 'GIS' },
-              { id: 'wb-map', label: 'WB Map', sub: 'GIS' },
-              { id: 'wc-map', label: 'WC Map', sub: 'GIS' },
-            ] as { id: SectionTab; label: string; sub: string }[]
+              { id: 'wa', label: 'WA', tip: 'WA (37 Shafts + Golapbag SPS)' },
+              { id: 'wb', label: 'WB', tip: 'WB (Open Cut DN1200 GRP)' },
+              { id: 'wc', label: 'WC', tip: 'WC (27 Shafts Micro-Tunnelling)' },
+              { id: 'combined', label: 'Combined', tip: 'Combined (WA + WB + WC + SPS)' },
+              { id: 'custom', label: 'Custom', tip: 'Custom Shaft Selection (WA / WC Only)' },
+              { id: 'wa-map', label: 'WA Map', tip: 'WA Portrait GIS Map' },
+              { id: 'wb-map', label: 'WB Map', tip: 'WB Portrait GIS Map' },
+              { id: 'wc-map', label: 'WC Map', tip: 'WC Portrait GIS Map' },
+            ] as { id: SectionTab; label: string; tip: string }[]
           ).map((tab) => {
             const active = state.activeSection === tab.id;
             const isMapTab = tab.id.endsWith('-map');
@@ -746,15 +753,16 @@ export function App() {
               <button
                 key={tab.id}
                 onClick={() => handleSwitchSection(tab.id)}
-                className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold transition ${
+                title={tab.tip}
+                className={`whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-bold transition ${
                   active
                     ? tab.id === 'combined'
-                      ? 'bg-indigo-500 text-white shadow'
+                      ? 'bg-indigo-500 text-white shadow-xs'
                       : isCustomTab
-                      ? 'bg-orange-500 text-white shadow'
+                      ? 'bg-orange-500 text-white shadow-xs'
                       : isMapTab
-                      ? 'bg-emerald-500 text-slate-950 shadow'
-                      : 'bg-blue-500 text-white shadow'
+                      ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                      : 'bg-blue-500 text-white shadow-xs'
                     : isCustomTab
                     ? 'text-orange-300 hover:bg-slate-700 hover:text-white'
                     : isMapTab
@@ -762,19 +770,14 @@ export function App() {
                     : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                 }`}
               >
-                <span>{tab.label}</span>
-                {!isMapTab && (
-                  <span className="hidden md:inline text-[10px] font-normal opacity-85">
-                    ({tab.sub})
-                  </span>
-                )}
+                {tab.label}
               </button>
             );
           })}
         </div>
 
         {/* View Mode Switcher (Overall / Weekly / Monthly — Orange highlight on comparison modes) */}
-        <div className="flex items-center gap-1 rounded-lg bg-slate-800 p-1">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-slate-700/70 bg-slate-800/95 p-0.5">
           {(
             [
               { id: 'overall', bn: 'সামগ্রিক', en: 'Overall' },
@@ -785,11 +788,11 @@ export function App() {
             <button
               key={m.id}
               onClick={() => setState((p) => ({ ...p, viewMode: m.id }))}
-              className={`rounded-md px-2 py-1 text-xs font-semibold transition ${
+              className={`whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-semibold transition ${
                 state.viewMode === m.id
                   ? m.id === 'overall'
-                    ? 'bg-emerald-500 text-slate-950 shadow'
-                    : 'bg-orange-500 text-white shadow'
+                    ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                    : 'bg-orange-500 text-white shadow-xs'
                   : 'text-slate-300 hover:bg-slate-700 hover:text-white'
               }`}
             >
@@ -798,61 +801,47 @@ export function App() {
           ))}
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/* Save Overall (WA+WB+WC in 1 File) */}
+        {/* Compact Right Actions: Save File | Files | Export | Lang Icon | Inspector Toggle */}
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             onClick={openSaveFileModal}
-            className="flex items-center gap-1 rounded-md bg-emerald-500 px-2.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition"
+            className="flex whitespace-nowrap items-center gap-1 rounded-md bg-emerald-500 px-2.5 py-1 text-[11px] font-bold text-slate-950 hover:bg-emerald-400 transition"
             title={
-              isBn
+              editingFile
+                ? `${isBn ? 'এডিটিং:' : 'Editing:'} ${editingFile.name}`
+                : isBn
                 ? 'WA, WB ও WC — ৩টি পেজ একসাথে নাম ও তারিখ দিয়ে সেভ করুন'
                 : 'Save all 3 sections (WA+WB+WC) into one file'
             }
           >
-            <Save className="h-3.5 w-3.5" />
-            {isBn ? 'ফাইল সেভ' : 'Save File'}
+            <Save className="h-3.5 w-3.5 shrink-0" />
+            <span>{isBn ? 'ফাইল সেভ' : 'Save File'}</span>
           </button>
 
-          {/* Saved Files Manager */}
           <button
             onClick={() => setFilesModalOpen(true)}
-            className="flex items-center gap-1 rounded-md border border-indigo-400/50 bg-indigo-600/90 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 transition"
+            title={
+              editingFile
+                ? `${isBn ? 'বর্তমান ফাইল:' : 'Loaded:'} ${editingFile.name}`
+                : isBn
+                ? 'সেভ করা সব ফাইল দেখুন'
+                : 'View all saved files'
+            }
+            className="flex whitespace-nowrap items-center gap-1 rounded-md border border-indigo-400/50 bg-indigo-600/90 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-500 transition"
           >
-            <FolderOpen className="h-3.5 w-3.5" />
-            {isBn ? `ফাইল (${state.savedFiles.length})` : `Files (${state.savedFiles.length})`}
-          </button>
-
-          {/* Direct A1 PDF (Current Sheet) */}
-          <button
-            onClick={() => handleExport('pdf')}
-            disabled={Boolean(exportBusy)}
-            className="flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-blue-500 transition disabled:opacity-50"
-            title="Export current view as A1 Vector PDF"
-          >
-            <FileText className="h-3.5 w-3.5" />
-            {exportBusy ? exportBusy : 'A1 PDF'}
-          </button>
-
-          {/* 5-Page A1 PDF (Combined -> WA Map -> WB Map -> WC Map -> WC Status) */}
-          <button
-            onClick={() => startMultiPagePdfExport(FIVE_PAGE_PDF_SECTIONS)}
-            disabled={Boolean(exportBusy)}
-            className="hidden sm:flex items-center gap-1 rounded-md border border-blue-400/60 bg-blue-800 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition disabled:opacity-50"
-            title="Export 5-Page A1 Vector PDF (Combined, WA Map, WB Map, WC Map, WC Status)"
-          >
-            <Files className="h-3.5 w-3.5" />
-            5-Page PDF
+            <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+            <span>{isBn ? `ফাইল (${state.savedFiles.length})` : `Files (${state.savedFiles.length})`}</span>
           </button>
 
           {/* Export / Import Menu */}
           <div className="relative">
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
-              className="flex items-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-xs font-semibold hover:bg-slate-700"
+              disabled={Boolean(exportBusy)}
+              className="flex whitespace-nowrap items-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold hover:bg-slate-700 disabled:opacity-60"
             >
-              <Download className="h-3.5 w-3.5" />
-              {isBn ? 'এক্সপোর্ট' : 'Export'}
+              <Download className="h-3.5 w-3.5 shrink-0" />
+              <span>{exportBusy || (isBn ? 'এক্সপোর্ট' : 'Export')}</span>
             </button>
 
             {showExportMenu && (
@@ -942,74 +931,38 @@ export function App() {
                   >
                     <Upload className="h-4 w-4 text-indigo-600" /> Import / Restore JSON (.json)
                   </button>
-                  <div className="my-1 border-t border-slate-100" />
-                  <button
-                    onClick={() => {
-                      setShowExportMenu(false);
-                      handleResetToPdf();
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-rose-600 hover:bg-rose-50"
-                  >
-                    <RotateCcw className="h-4 w-4" /> Reset to Initial PDF Baseline
-                  </button>
                 </div>
               </>
             )}
           </div>
 
-          {/* Language Toggle */}
+          {/* Language Toggle Icon Only */}
           <button
             onClick={() =>
               setState((p) => ({ ...p, uiLang: p.uiLang === 'bn' ? 'en' : 'bn' }))
             }
-            className="flex items-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2 py-1.5 text-xs font-semibold hover:bg-slate-700"
+            aria-label="Toggle Language"
+            title={isBn ? 'Switch to English' : 'বাংলায় পরিবর্তন করুন'}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white transition"
           >
             <Languages className="h-3.5 w-3.5" />
-            {isBn ? 'EN' : 'বাংলা'}
           </button>
 
           {/* Toggle Editor */}
           <button
             onClick={() => setShowInspector(!showInspector)}
-            className="rounded-md border border-slate-600 bg-slate-800 p-1.5 hover:bg-slate-700"
+            aria-label="Toggle Inspector"
+            title={showInspector ? 'Hide Side Panel' : 'Show Side Panel'}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white transition"
           >
             {showInspector ? (
-              <PanelRightClose className="h-4 w-4" />
+              <PanelRightClose className="h-3.5 w-3.5" />
             ) : (
-              <PanelRightOpen className="h-4 w-4" />
+              <PanelRightOpen className="h-3.5 w-3.5" />
             )}
           </button>
         </div>
       </header>
-
-      {/* ==================== EDITING SAVED FILE BANNER (OVERALL MODE) ==================== */}
-      {state.viewMode === 'overall' && editingFile && (
-        <div className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs text-indigo-950">
-          <div className="flex items-center gap-2">
-            <Pencil className="h-3.5 w-3.5 text-indigo-700" />
-            <span>
-              {isBn ? 'এডিট করছেন:' : 'Editing Saved File:'}{' '}
-              <strong>{editingFile.name}</strong> ({formatDateDisplay(editingFile.date)} — WA + WB + WC)
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={openSaveFileModal}
-              className="rounded bg-indigo-600 px-2.5 py-0.5 font-bold text-white hover:bg-indigo-700"
-            >
-              {isBn ? 'আপডেট / নতুন সেভ' : 'Update / Save Copy'}
-            </button>
-            <button
-              onClick={() =>
-                setState((p) => ({ ...p, activeLoadedFileId: null }))
-              }
-              className="rounded border border-indigo-300 bg-white px-2 py-0.5 font-semibold text-indigo-800 hover:bg-indigo-100"
-            >
-              {isBn ? 'সম্পন্ন' : 'Detach'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ==================== 2-FILE COMPARISON BAR (WEEKLY / MONTHLY) ==================== */}
       {state.viewMode !== 'overall' && (
@@ -1402,6 +1355,17 @@ export function App() {
               >
                 {isBn ? 'বাতিল' : 'Cancel'}
               </button>
+              {editingFile && (
+                <button
+                  onClick={() => {
+                    setState((p) => ({ ...p, activeLoadedFileId: null }));
+                    setSaveModalOpen(false);
+                  }}
+                  className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                >
+                  {isBn ? 'ফাইল ডিসকানেক্ট' : 'Detach File'}
+                </button>
+              )}
               {editingFile && (
                 <button
                   onClick={() => handleSaveFile('update')}
