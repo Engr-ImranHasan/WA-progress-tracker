@@ -20,7 +20,11 @@ import {
   resolveDisplayContext,
 } from '../utils/calculations';
 import { FullPageGisMapSheet } from './FullPageGisMaps';
-import { WbNavigationMapGroup, WcNavigationMapGroup } from './NavigationMaps';
+import {
+  WaNavigationMapGroup,
+  WbNavigationMapGroup,
+  WcNavigationMapGroup,
+} from './NavigationMaps';
 
 interface A1SheetDrawingProps {
   state: AppState;
@@ -79,6 +83,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     displayPump: pumpStation,
     displayWb: wbData,
     displayWc: wcData,
+    displayWaGeoNodes: waGeoNodes,
+    displaySpsCoord: spsCoord,
+    displayWaCustomPoints: waCustomPoints,
     baseline,
     file1Label,
     file2Label,
@@ -1948,20 +1955,28 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 <text
                   x={5}
                   y={stepY * 0.68}
-                  fontSize={compact ? (isLongKey ? 6.0 : 7.2) : isLongKey ? 7.0 : 7.6}
+                  fontSize={compact || titleW < 285 ? (isLongKey ? 5.3 : 7.0) : isLongKey ? 6.4 : 7.6}
                   fontWeight="700"
                   fill="#475569"
                 >
                   {k}
                 </text>
                 <text
-                  x={compact ? 92 : 104}
+                  x={
+                    compact || titleW < 285
+                      ? isLongKey
+                        ? 96
+                        : 88
+                      : isLongKey
+                      ? 108
+                      : 102
+                  }
                   y={stepY * 0.68}
-                  fontSize={compact ? 7.1 : 7.8}
+                  fontSize={titleW < 285 ? 7.0 : compact ? 7.0 : 7.8}
                   fontWeight="600"
                   fill="#0f172a"
                 >
-                  {trunc(v, compact ? 28 : 42)}
+                  {trunc(v, titleW < 285 ? 28 : compact ? 28 : 42)}
                 </text>
               </g>
             );
@@ -1987,7 +2002,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       ? 'WB SECTION — OPEN-CUT DN1200 GRP PIPELINE & NAVIGATION MAP'
       : activeSection === 'wc'
       ? 'WC SECTION — MICRO-TUNNELLING (WC-1 TO WC-27) & NAVIGATION MAP'
-      : 'WA SECTION — SHAFT, MANHOLE, MICRO-TUNNELLING & GOLAPBAG SPS';
+      : 'WA SECTION — SHAFT, MANHOLE, MICRO-TUNNELLING, GOLAPBAG SPS & NAVIGATION MAP';
 
   // WB Node Status counts
   const wbDoneCount = wbData.nodes.filter((n) => n.status === 'complete').length;
@@ -2041,19 +2056,19 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       </text>
 
       {/* ===================================================================== */}
-      {/* VIEW 1: WA SECTION ONLY                                               */}
+      {/* VIEW 1: WA SECTION (SHAFTS + SPS ON LEFT | FULL VERTICAL MAP RIGHT)   */}
       {/* ===================================================================== */}
       {activeSection === 'wa' && (() => {
         const cols = settings.layoutMode === '12col' ? 12 : 10;
-        const gridX = 46;
+        const gridX = 32;
         const gridY = 58;
-        const gridW = 1584;
+        const gridW = 1236;
         const colW = gridW / cols;
         const rowH = 232;
         const pumpX =
-          settings.layoutMode === '12col' ? gridX + colW * 1.35 : gridX + colW * 7.36;
+          settings.layoutMode === '12col' ? gridX + colW * 1.35 : gridX + colW * 7.22;
         const pumpW =
-          settings.layoutMode === '12col' ? colW * 4.4 : colW * 2.64;
+          settings.layoutMode === '12col' ? colW * 4.4 : colW * 2.78;
 
         return (
           <g>
@@ -2062,7 +2077,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 key={r}
                 x1={20}
                 y1={gridY + r * rowH - 3}
-                x2={SHEET_W - 20}
+                x2={1310}
                 y2={gridY + r * rowH - 3}
                 stroke="#e2e8f0"
                 strokeWidth={0.7}
@@ -2083,7 +2098,26 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             {settings.showPumpStation &&
               renderPumpStation(pumpStation, pumpX, gridY + rowH * 3 + 4, pumpW, 224)}
 
-            {/* WA Bottom Footer */}
+            {/* Right-Side Vertical WA Navigation Map (above full-width bottom bar) */}
+            <WaNavigationMapGroup
+              shafts={waShafts}
+              geoNodes={waGeoNodes}
+              spsCoord={spsCoord}
+              customPoints={waCustomPoints}
+              x={1318}
+              y={58}
+              w={342}
+              h={930}
+              settings={settings}
+              viewMode={viewMode}
+              baselineShafts={baseline.shafts}
+              highlightColor={currHighlight}
+              selectedShaftId={selectedShaftId}
+              onSelectShaft={(id) => onSelectShaft(id, 'shaft')}
+              clipIdSuffix="wa-page"
+            />
+
+            {/* WA Full-Width Bottom Bar (Summary + Legend + Title Block across full A1 width) */}
             <g transform="translate(16, 996)">
               <rect x={6} y={0} width={924} height={168} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
               <rect x={6} y={0} width={924} height={22} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
@@ -2216,11 +2250,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               return (
                 <g key={colIdx} transform={`translate(${bx}, 34)`}>
                   <rect x={0} y={0} width={bw} height={22} fill="#1e3a8a" />
-                  <text x={24} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">Node</text>
-                  <text x={78} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">Chainage</text>
-                  <text x={144} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">S. Date</text>
-                  <text x={212} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">E. Date</text>
-                  <text x={286} y={14.5} textAnchor="middle" fontSize={7.2} fontWeight="700" fill="#ffffff">Status</text>
+                  <text x={44} y={14.5} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#ffffff">Node</text>
+                  <text x={144} y={14.5} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#ffffff">Chainage</text>
+                  <text x={256} y={14.5} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#ffffff">Status</text>
 
                   {slice.map((n, ri) => {
                     const ry = 22 + ri * 45.2;
@@ -2244,29 +2276,23 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                           stroke={isSel ? '#2563eb' : '#cbd5e1'}
                           strokeWidth={isSel ? 1.4 : 0.6}
                         />
-                        <text x={24} y={ry + 25} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#0f172a">
+                        <text x={44} y={ry + 25.5} textAnchor="middle" fontSize={8.8} fontWeight="700" fill="#0f172a">
                           {n.id}
                         </text>
-                        <text x={78} y={ry + 25} textAnchor="middle" fontSize={7.8} fontWeight="600" fill="#334155">
+                        <text x={144} y={ry + 25.5} textAnchor="middle" fontSize={8.4} fontWeight="600" fill="#334155">
                           {n.chainageM.toFixed(1)} m
                         </text>
-                        <text x={144} y={ry + 25} textAnchor="middle" fontSize={7.0} fill="#334155">
-                          {formatDateDisplay(n.sDate) || '-'}
-                        </text>
-                        <text x={212} y={ry + 25} textAnchor="middle" fontSize={7.0} fill="#334155">
-                          {formatDateDisplay(n.eDate) || '-'}
-                        </text>
                         <rect
-                          x={248}
-                          y={ry + 12}
-                          width={72}
-                          height={20}
+                          x={208}
+                          y={ry + 11.5}
+                          width={96}
+                          height={22}
                           rx={3}
                           fill={badgeFill}
                           stroke={badgeTxt}
-                          strokeWidth={0.6}
+                          strokeWidth={0.65}
                         />
-                        <text x={284} y={ry + 25} textAnchor="middle" fontSize={7.2} fontWeight="700" fill={badgeTxt}>
+                        <text x={256} y={ry + 25.5} textAnchor="middle" fontSize={7.8} fontWeight="700" fill={badgeTxt}>
                           {n.status.toUpperCase()}
                         </text>
                       </g>
@@ -2318,14 +2344,14 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       )}
 
       {/* ===================================================================== */}
-      {/* VIEW 3: WC SECTION PAGE (27 SHAFTS SAME AS WA + WC NAVIGATION MAP)   */}
+      {/* VIEW 3: WC SECTION (27 SHAFTS ON LEFT | FULL VERTICAL MAP ON RIGHT)   */}
       {/* ===================================================================== */}
       {activeSection === 'wc' && (() => {
-        const cols = 10;
-        const gridX = 46;
-        const gridY = 56;
-        const gridW = 1584;
-        const rowH = 220;
+        const cols = 9;
+        const gridX = 32;
+        const gridY = 64;
+        const gridW = 1236;
+        const rowH = 304;
         const wcBaseMap = baseline.wcShafts || {};
 
         return (
@@ -2334,9 +2360,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               <line
                 key={r}
                 x1={20}
-                y1={gridY + r * rowH - 3}
-                x2={SHEET_W - 20}
-                y2={gridY + r * rowH - 3}
+                y1={gridY + r * rowH - 5}
+                x2={1310}
+                y2={gridY + r * rowH - 5}
                 stroke="#e2e8f0"
                 strokeWidth={0.7}
                 strokeDasharray="4,4"
@@ -2352,21 +2378,24 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               connectLastToPump: false,
             })}
 
-            {/* WC Navigation Map right below 27 shafts (y=720..988) */}
+            {/* Right-Side Vertical WC Navigation Map (above full-width bottom bar) */}
             <WcNavigationMapGroup
               wc={wcData}
-              x={22}
-              y={720}
-              w={1638}
-              h={268}
+              x={1318}
+              y={58}
+              w={342}
+              h={930}
               settings={settings}
+              viewMode={viewMode}
+              baselineShafts={wcBaseMap}
+              highlightColor={currHighlight}
               selectedShaftId={selectedShaftId}
               onSelectShaft={(id) => onSelectShaft(id, 'shaft')}
               compact={false}
               clipIdSuffix="wc-page"
             />
 
-            {/* WC Page Footer */}
+            {/* WC Full-Width Bottom Bar (Summary + Legend + Title Block across full A1 width) */}
             <g transform="translate(16, 996)">
               <rect x={6} y={0} width={924} height={168} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
               <rect x={6} y={0} width={924} height={22} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
@@ -2377,37 +2406,63 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               <line x1={610} y1={22} x2={610} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
 
               <text x={152} y={40} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
-                WC SHAFT PROGRESS
+                WC SHAFT PROGRESS (27 Nos)
               </text>
-              <text x={22} y={64} fontSize={8.0} fill="#0f172a">TOTAL SHAFTS</text>
-              <text x={280} y={64} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#0f172a">: {wcSummary.totalShafts} Nos</text>
-              <text x={22} y={86} fontSize={8.0} fill="#15803d" fontWeight="600">COMPLETED SHAFTS</text>
-              <text x={280} y={86} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#15803d">: {wcSummary.completedShafts} Nos</text>
-              <text x={22} y={108} fontSize={8.0} fill="#b45309" fontWeight="600">ON-GOING SHAFTS</text>
-              <text x={280} y={108} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#b45309">: {wcSummary.ongoingShafts} Nos</text>
-              <text x={22} y={130} fontSize={8.0} fill="#dc2626">REMAINING SHAFTS</text>
-              <text x={280} y={130} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#dc2626">: {wcSummary.remainingShafts} Nos</text>
+              <text x={22} y={62} fontSize={8.0} fill="#0f172a">TOTAL SHAFTS</text>
+              <text x={280} y={62} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#0f172a">: {wcSummary.totalShafts} Nos</text>
+              <text x={22} y={82} fontSize={8.0} fill="#15803d" fontWeight="600">COMPLETED SHAFTS</text>
+              <text x={280} y={82} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#15803d">: {wcSummary.completedShafts} Nos</text>
+              <text x={22} y={102} fontSize={8.0} fill="#b45309" fontWeight="600">ON-GOING SHAFTS</text>
+              <text x={280} y={102} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#b45309">: {wcSummary.ongoingShafts} Nos</text>
+              <text x={22} y={122} fontSize={8.0} fill="#dc2626">REMAINING SHAFTS</text>
+              <text x={280} y={122} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#dc2626">: {wcSummary.remainingShafts} Nos</text>
+
+              {viewMode !== 'overall' && (
+                <g>
+                  <rect x={16} y={130} width={270} height={30} rx={3} fill="#fff7ed" stroke="#ea580c" strokeWidth={0.8} />
+                  <text x={151} y={144} textAnchor="middle" fontSize={7.0} fontWeight="700" fill="#9a3412">
+                    {viewMode === 'weekly' ? 'WEEKLY WC DELTA: ' : 'MONTHLY WC DELTA: '}
+                    +{wcSummary.delta.addedLayers}L | +{wcSummary.delta.addedShaftsCompleted} Shafts
+                  </text>
+                  <text x={151} y={155} textAnchor="middle" fontSize={6.8} fill="#c2410c">
+                    Tunnel Added: +{wcSummary.delta.addedTunnelM.toFixed(1)} m
+                  </text>
+                </g>
+              )}
 
               <text x={455} y={40} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
                 WC MANHOLE (CASTING & RING)
               </text>
-              <text x={320} y={62} fontSize={7.8} fontWeight="700" fill="#1d4ed8">CASTING (Done/Ong/Rem)</text>
-              <text x={592} y={62} textAnchor="end" fontSize={8.0} fontWeight="700" fill="#1d4ed8">: {wcSummary.castingCompleteCount} / {wcSummary.castingOngoingCount} / {wcSummary.castingRemainingCount}</text>
-              <text x={320} y={84} fontSize={7.8} fontWeight="700" fill="#0284c7">RING (Done/Ong/Rem)</text>
-              <text x={592} y={84} textAnchor="end" fontSize={8.0} fontWeight="700" fill="#0284c7">: {wcSummary.precastCompleteCount} / {wcSummary.precastOngoingCount} / {wcSummary.precastRemainingCount}</text>
-              <text x={320} y={108} fontSize={7.8} fill="#0f172a">TOTAL MANHOLES</text>
-              <text x={592} y={108} textAnchor="end" fontSize={8.0} fontWeight="700" fill="#0f172a">: {wcSummary.totalManholes} Nos</text>
+              <text x={316} y={58} fontSize={7.5} fontWeight="700" fill="#1d4ed8">Lower Casting Complete (100%)</text>
+              <text x={594} y={58} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#1d4ed8">: {String(wcSummary.castingCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={316} y={74} fontSize={7.5} fontWeight="600" fill="#b45309">Lower Casting On-going (&lt;100%)</text>
+              <text x={594} y={74} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#b45309">: {String(wcSummary.castingOngoingCount).padStart(2, '0')} Nos</text>
+              <text x={316} y={90} fontSize={7.5} fill="#dc2626">Lower Casting Remaining</text>
+              <text x={594} y={90} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#dc2626">: {String(wcSummary.castingRemainingCount).padStart(2, '0')} Nos</text>
+
+              <line x1={316} y1={98} x2={594} y2={98} stroke="#cbd5e1" strokeWidth={0.6} />
+
+              <text x={316} y={112} fontSize={7.5} fontWeight="700" fill="#0284c7">Upper Ring Complete (100%)</text>
+              <text x={594} y={112} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#0284c7">: {String(wcSummary.precastCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={316} y={128} fontSize={7.5} fontWeight="600" fill="#b45309">Upper Ring On-going (&lt;100%)</text>
+              <text x={594} y={128} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#b45309">: {String(wcSummary.precastOngoingCount).padStart(2, '0')} Nos</text>
+              <text x={316} y={144} fontSize={7.5} fill="#dc2626">Upper Ring Remaining</text>
+              <text x={594} y={144} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#dc2626">: {String(wcSummary.precastRemainingCount).padStart(2, '0')} Nos</text>
+              <text x={316} y={159} fontSize={7.1} fontWeight="600" fill="#475569">Total Manholes: {wcSummary.totalManholes} Nos</text>
 
               <text x={765} y={40} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
                 WC MICRO-TUNNELLING
               </text>
-              <text x={626} y={64} fontSize={8.0} fontWeight="700" fill="#0f172a">TOTAL LENGTH</text>
-              <text x={912} y={64} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#0f172a">: {(wcSummary.totalTunnelLengthM / 1000).toFixed(3)} km</text>
-              <text x={626} y={86} fontSize={8.0} fontWeight="700" fill="#a21caf">COMPLETED</text>
-              <text x={912} y={86} textAnchor="end" fontSize={8.2} fontWeight="700" fill="#a21caf">: {(wcSummary.completedTunnelLengthM / 1000).toFixed(3)} km ({wcSummary.tunnelPctOverall.toFixed(1)}%)</text>
-              <text x={626} y={110} fontSize={7.3} fill="#334155">DN1800: {(wcSummary.byDia.DN1800.completedM / 1000).toFixed(3)} / {(wcSummary.byDia.DN1800.totalM / 1000).toFixed(3)} km</text>
-              <text x={626} y={127} fontSize={7.3} fill="#334155">DN2400: {(wcSummary.byDia.DN2400.completedM / 1000).toFixed(3)} / {(wcSummary.byDia.DN2400.totalM / 1000).toFixed(3)} km</text>
-              <text x={626} y={144} fontSize={7.3} fill="#334155">DN2600: {(wcSummary.byDia.DN2600.completedM / 1000).toFixed(3)} / {(wcSummary.byDia.DN2600.totalM / 1000).toFixed(3)} km</text>
+              <text x={626} y={62} fontSize={7.8} fontWeight="700" fill="#0f172a">TOTAL LENGTH</text>
+              <text x={912} y={62} textAnchor="end" fontSize={8.0} fontWeight="700" fill="#0f172a">: {(wcSummary.totalTunnelLengthM / 1000).toFixed(3)} km</text>
+              <text x={626} y={82} fontSize={7.8} fontWeight="700" fill="#a21caf">COMPLETED</text>
+              <text x={912} y={82} textAnchor="end" fontSize={8.0} fontWeight="700" fill="#a21caf">: {(wcSummary.completedTunnelLengthM / 1000).toFixed(3)} km ({wcSummary.tunnelPctOverall.toFixed(1)}%)</text>
+              <text x={626} y={104} fontSize={7.3} fill="#334155">1. DN 1800 (Total: {(wcSummary.byDia.DN1800.totalM / 1000).toFixed(3)} km)</text>
+              <text x={912} y={104} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(wcSummary.byDia.DN1800.completedM / 1000).toFixed(3)} km</text>
+              <text x={626} y={121} fontSize={7.3} fill="#334155">2. DN 2400 (Total: {(wcSummary.byDia.DN2400.totalM / 1000).toFixed(3)} km)</text>
+              <text x={912} y={121} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(wcSummary.byDia.DN2400.completedM / 1000).toFixed(3)} km</text>
+              <text x={626} y={138} fontSize={7.3} fill="#334155">3. DN 2600 (Total: {(wcSummary.byDia.DN2600.totalM / 1000).toFixed(3)} km)</text>
+              <text x={912} y={138} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">Done: {(wcSummary.byDia.DN2600.completedM / 1000).toFixed(3)} km</text>
 
               {renderLegendAndTitle(938, 0, 374, 168, 1320, 0, 324, 168, true)}
             </g>

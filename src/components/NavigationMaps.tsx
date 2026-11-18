@@ -1,6 +1,9 @@
 import React, { useMemo } from 'react';
 import {
+  CustomMapPoint,
+  GeoNodeCoord,
   ShaftRecord,
+  ShaftSnapshotItem,
   SheetSettings,
   ViewMode,
   WbSectionData,
@@ -8,7 +11,12 @@ import {
   WorkStatus,
 } from '../types';
 import { getShaftStatus, getTunnelStatus } from '../utils/calculations';
-import { DEFAULT_AIR_VALVE_COORD, DEFAULT_WASHOUT_COORD } from '../data/wbcInitialData';
+import {
+  DEFAULT_AIR_VALVE_COORD,
+  DEFAULT_WASHOUT_COORD,
+  GOLAPBAG_SPS_COORD,
+  INITIAL_WA_GEO_NODES,
+} from '../data/wbcInitialData';
 import {
   buildGeoViewport,
   computeWbPolylineSplit,
@@ -458,6 +466,9 @@ interface WcMapProps {
   w: number;
   h: number;
   settings: SheetSettings;
+  viewMode?: ViewMode;
+  baselineShafts?: Record<string, ShaftSnapshotItem>;
+  highlightColor?: string;
   selectedShaftId?: string;
   onSelectShaft?: (id: string) => void;
   compact?: boolean;
@@ -471,6 +482,9 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
   w,
   h,
   settings,
+  viewMode = 'overall',
+  baselineShafts,
+  highlightColor = '#f97316',
   selectedShaftId,
   onSelectShaft,
   compact = false,
@@ -483,14 +497,16 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
   const mapH = Math.max(40, h - padTop - 4);
   const clipId = `wc-map-clip-${clipIdSuffix}`;
   const isNarrow = w < 440;
+  const isTallVertical = isNarrow && mapH > 600;
 
   const viewport = useMemo(
-    () => buildGeoViewport(wc.geoNodes, mapX, mapY, mapW, mapH, compact ? 0.12 : 0.12),
-    [wc.geoNodes, mapX, mapY, mapW, mapH, compact]
+    () => buildGeoViewport(wc.geoNodes, mapX, mapY, mapW, mapH, isTallVertical ? 0.11 : 0.12),
+    [wc.geoNodes, mapX, mapY, mapW, mapH, isTallVertical]
   );
 
-  const tilePxW = Math.min(1100, Math.max(480, Math.round(mapW * (compact ? 1.55 : 1.35))));
-  const tilePxH = Math.min(1100, Math.max(420, Math.round(mapH * (compact ? 1.55 : 1.35))));
+  const scaleFactor = Math.min(compact ? 1.55 : 1.45, 1580 / Math.max(1, mapW, mapH));
+  const tilePxW = Math.max(360, Math.round(mapW * scaleFactor));
+  const tilePxH = Math.max(360, Math.round(mapH * scaleFactor));
 
   const tileDataUrl = useMapTileSnapshot(
     viewport,
@@ -538,36 +554,36 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
         stroke="#1e3a8a"
         strokeWidth={0.8}
       />
-      <rect x={x + 4} y={y + 2.5} width={compact ? 26 : 32} height={padTop - 5} rx={3} fill="#7e22ce" />
+      <rect x={x + 4} y={y + 2.5} width={compact || isNarrow ? 26 : 32} height={padTop - 5} rx={3} fill="#7e22ce" />
       <text
-        x={x + (compact ? 17 : 20)}
-        y={y + (compact ? 13 : 17.5)}
+        x={x + (compact || isNarrow ? 17 : 20)}
+        y={y + (compact ? 13 : 16)}
         textAnchor="middle"
-        fontSize={compact ? 9.5 : 11.5}
+        fontSize={compact || isNarrow ? 9.5 : 11.5}
         fontWeight="900"
         fill="#ffffff"
       >
         WC
       </text>
       <text
-        x={x + (compact ? 34 : 42)}
-        y={y + (compact ? 13 : 17.5)}
+        x={x + (compact || isNarrow ? 34 : 42)}
+        y={y + (compact ? 13 : 16)}
         fontSize={isNarrow ? 8.2 : compact ? 9.0 : 11.2}
         fontWeight="800"
         fill="#581c87"
       >
-        {isNarrow ? '(WC-1..WC-27)' : 'SECTION (MICRO-TUNNEL WC-1 TO WC-27)'}
+        {isNarrow ? 'NAVIGATION MAP' : 'SECTION (MICRO-TUNNEL WC-1 TO WC-27)'}
       </text>
       <text
         x={x + w - 7}
         y={y + (compact ? 13 : 16)}
         textAnchor="end"
-        fontSize={isNarrow ? 5.7 : compact ? 6.0 : 8.0}
+        fontSize={isNarrow ? 6.4 : compact ? 6.0 : 8.0}
         fontWeight="700"
         fill={doneLenM > 0 ? '#a21caf' : '#dc2626'}
       >
         {isNarrow
-          ? `${(doneLenM / 1000).toFixed(2)} / ${(totalLenM / 1000).toFixed(2)} km (${doneLenM > 0 ? 'Active' : 'Blank'})`
+          ? `${(doneLenM / 1000).toFixed(2)}/${(totalLenM / 1000).toFixed(2)} km`
           : `Done: ${(doneLenM / 1000).toFixed(3)} / ${(totalLenM / 1000).toFixed(2)} km (${doneLenM > 0 ? 'Active' : 'Not Started'})`}
       </text>
 
@@ -621,24 +637,48 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
           const p2 = viewport.project(nextNode.lat, nextNode.lon);
           const sh = shaftById.get(gNode.id);
           const mtStatus = sh ? getTunnelStatus(sh) : 'remaining';
+          const prevSh = baselineShafts && sh ? baselineShafts[sh.id] : undefined;
+          const hasNewTunnel =
+            viewMode !== 'overall' && sh && prevSh && sh.tunnelPct > (prevSh.tunnelPct ?? 0);
           const stroke =
             mtStatus === 'complete'
-              ? '#a21caf'
+              ? '#16a34a'
               : mtStatus === 'ongoing'
-              ? '#f59e0b'
+              ? '#2563eb'
               : '#dc2626';
           return (
-            <line
-              key={`seg-${gNode.id}`}
-              x1={p1.x}
-              y1={p1.y}
-              x2={p2.x}
-              y2={p2.y}
-              stroke={stroke}
-              strokeWidth={compact ? 2.4 : 3.2}
-              strokeDasharray={mtStatus === 'remaining' ? '4,2' : undefined}
-              strokeLinecap="round"
-            />
+            <g key={`seg-${gNode.id}`}>
+              <line
+                x1={p1.x}
+                y1={p1.y}
+                x2={p2.x}
+                y2={p2.y}
+                stroke="#ffffff"
+                strokeWidth={isTallVertical ? 5.6 : 4.2}
+                strokeLinecap="round"
+              />
+              <line
+                x1={p1.x}
+                y1={p1.y}
+                x2={p2.x}
+                y2={p2.y}
+                stroke={stroke}
+                strokeWidth={isTallVertical ? 3.8 : compact ? 2.4 : 3.2}
+                strokeDasharray={mtStatus === 'remaining' && !isTallVertical ? '4,2' : undefined}
+                strokeLinecap="round"
+              />
+              {hasNewTunnel && (
+                <line
+                  x1={p1.x}
+                  y1={p1.y}
+                  x2={p2.x}
+                  y2={p2.y}
+                  stroke={highlightColor}
+                  strokeWidth={isTallVertical ? 4.2 : 3.5}
+                  strokeLinecap="round"
+                />
+              )}
+            </g>
           );
         })}
 
@@ -646,7 +686,7 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
         {(() => {
           let lastLx = -9999;
           let lastLy = -9999;
-          const minDist = compact ? 18 : 13;
+          const minDist = isTallVertical ? 14 : compact ? 18 : 13;
 
           return wc.geoNodes.map((gNode, idx) => {
             const pt = viewport.project(gNode.lat, gNode.lon);
@@ -654,16 +694,28 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
             const st = sh ? getShaftStatus(sh) : 'remaining';
             const col = nodeColors(st);
             const isSel = selectedShaftId === gNode.id;
-            const r = isSel ? (compact ? 4.0 : 5.5) : compact ? 2.5 : 3.5;
+            const prevSh = baselineShafts && sh ? baselineShafts[sh.id] : undefined;
+            const hasNewShaft =
+              viewMode !== 'overall' &&
+              sh &&
+              prevSh &&
+              ((sh.layerFlags || []).filter(Boolean).length > (prevSh.layerFlags || []).filter(Boolean).length ||
+                sh.castingPct > (prevSh.castingPct ?? 0) ||
+                sh.precastPct > (prevSh.precastPct ?? 0));
+            const r = isSel ? (isTallVertical ? 5.8 : compact ? 4.0 : 5.5) : isTallVertical ? 4.4 : compact ? 2.5 : 3.5;
             const isEnd = idx === 0 || idx === wc.geoNodes.length - 1 || isSel;
             const farEnough = Math.hypot(pt.x - lastLx, pt.y - lastLy) >= minDist;
-            const showLbl = isEnd || ((!compact || idx % 3 === 0) && farEnough);
+            const showLbl = isTallVertical ? (isEnd || farEnough) : isEnd || ((!compact || idx % 3 === 0) && farEnough);
             if (showLbl) {
               lastLx = pt.x;
               lastLy = pt.y;
             }
-            const sideRight = idx % 2 === 0;
-            const lx = sideRight ? pt.x + r + 3 : pt.x - r - 3;
+            let sideRight = idx % 2 === 0;
+            if (isTallVertical) {
+              if (pt.x > mapX + mapW - 44) sideRight = false;
+              else if (pt.x < mapX + 44) sideRight = true;
+            }
+            const lx = sideRight ? pt.x + r + 4 : pt.x - r - 4;
             const anchor = sideRight ? 'start' : 'end';
 
             return (
@@ -677,8 +729,11 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
                   }
                 }}
               >
+                {hasNewShaft && (
+                  <circle cx={pt.x} cy={pt.y} r={r + 3.2} fill="none" stroke={highlightColor} strokeWidth={2.0} />
+                )}
                 {isSel && (
-                  <circle cx={pt.x} cy={pt.y} r={r + 3} fill="none" stroke="#2563eb" strokeWidth={1.5} />
+                  <circle cx={pt.x} cy={pt.y} r={r + 3} fill="none" stroke="#2563eb" strokeWidth={1.6} />
                 )}
                 <circle
                   cx={pt.x}
@@ -686,25 +741,25 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
                   r={r}
                   fill={col.fill}
                   stroke={col.stroke}
-                  strokeWidth={compact ? 0.9 : 1.2}
+                  strokeWidth={isTallVertical ? 1.4 : compact ? 0.9 : 1.2}
                 />
                 {showLbl && (
                   <g>
                     <rect
-                      x={sideRight ? lx - 1 : lx - (compact ? 21 : 25)}
-                      y={pt.y - (compact ? 4.2 : 5.2)}
-                      width={compact ? 22 : 26}
-                      height={compact ? 7.5 : 9.5}
+                      x={sideRight ? lx - 1.5 : lx - (isTallVertical ? 28 : compact ? 21 : 25)}
+                      y={pt.y - (isTallVertical ? 6 : compact ? 4.2 : 5.2)}
+                      width={isTallVertical ? 30 : compact ? 22 : 26}
+                      height={isTallVertical ? 11 : compact ? 7.5 : 9.5}
                       rx={1.5}
                       fill="#ffffff"
-                      fillOpacity={0.88}
+                      fillOpacity={0.9}
                     />
                     <text
                       x={lx}
-                      y={pt.y + (compact ? 1.5 : 2.2)}
+                      y={pt.y + (isTallVertical ? 2.5 : compact ? 1.5 : 2.2)}
                       textAnchor={anchor}
-                      fontSize={compact ? 4.6 : 5.8}
-                      fontWeight="700"
+                      fontSize={isTallVertical ? 7.2 : compact ? 4.6 : 5.8}
+                      fontWeight="800"
                       fill="#0f172a"
                     >
                       {gNode.id}
@@ -731,9 +786,409 @@ export const WcNavigationMapGroup: React.FC<WcMapProps> = ({
 
         {/* North arrow */}
         <g transform={`translate(${mapX + mapW - 18}, ${mapY + 18})`}>
-          <circle cx={0} cy={0} r={9} fill="#ffffff" fillOpacity={0.88} stroke="#475569" strokeWidth={0.7} />
-          <polygon points="0,-7 -3,3 0,1 3,3" fill="#1e3a8a" />
-          <text x={0} y={7.5} textAnchor="middle" fontSize={4.5} fontWeight="700" fill="#1e3a8a">N</text>
+          <circle cx={0} cy={0} r={10} fill="#ffffff" fillOpacity={0.9} stroke="#475569" strokeWidth={0.8} />
+          <polygon points="0,-7.5 -3.2,3 0,1 3.2,3" fill="#1e3a8a" />
+          <text x={0} y={8} textAnchor="middle" fontSize={4.8} fontWeight="700" fill="#1e3a8a">N</text>
+        </g>
+
+        {/* Compact Bottom Legend for Tall Vertical Map */}
+        {isTallVertical && (
+          <g transform={`translate(${mapX + 6}, ${mapY + mapH - (viewMode !== 'overall' ? 54 : 42)})`}>
+            <rect
+              x={0}
+              y={0}
+              width={132}
+              height={viewMode !== 'overall' ? 48 : 36}
+              rx={3}
+              fill="#ffffff"
+              fillOpacity={0.93}
+              stroke="#475569"
+              strokeWidth={0.7}
+            />
+            <line x1={6} y1={10} x2={22} y2={10} stroke="#16a34a" strokeWidth={3.0} />
+            <text x={27} y={12.5} fontSize={6.5} fontWeight="700" fill="#0f172a">Complete</text>
+            <line x1={6} y1={21} x2={22} y2={21} stroke="#2563eb" strokeWidth={3.0} />
+            <text x={27} y={23.5} fontSize={6.5} fontWeight="700" fill="#1e3a8a">On-Going</text>
+            <line x1={6} y1={31} x2={22} y2={31} stroke="#dc2626" strokeWidth={3.0} />
+            <text x={27} y={33.5} fontSize={6.5} fontWeight="700" fill="#991b1b">Remaining</text>
+            {viewMode !== 'overall' && (
+              <g>
+                <line x1={6} y1={41} x2={22} y2={41} stroke={highlightColor} strokeWidth={3.2} />
+                <text x={27} y={43.5} fontSize={6.5} fontWeight="800" fill="#ea580c">New (Compare)</text>
+              </g>
+            )}
+          </g>
+        )}
+      </g>
+
+      <rect x={mapX} y={mapY} width={mapW} height={mapH} fill="none" stroke="#94a3b8" strokeWidth={0.6} />
+    </g>
+  );
+};
+
+interface WaMapProps {
+  shafts: ShaftRecord[];
+  geoNodes?: GeoNodeCoord[];
+  spsCoord?: { lat: number; lon: number };
+  customPoints?: CustomMapPoint[];
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  settings: SheetSettings;
+  viewMode?: ViewMode;
+  baselineShafts?: Record<string, ShaftSnapshotItem>;
+  highlightColor?: string;
+  selectedShaftId?: string;
+  onSelectShaft?: (id: string) => void;
+  clipIdSuffix?: string;
+}
+
+export const WaNavigationMapGroup: React.FC<WaMapProps> = ({
+  shafts,
+  geoNodes,
+  spsCoord,
+  customPoints,
+  x,
+  y,
+  w,
+  h,
+  settings,
+  viewMode = 'overall',
+  baselineShafts,
+  highlightColor = '#f97316',
+  selectedShaftId,
+  onSelectShaft,
+  clipIdSuffix = 'wa-main',
+}) => {
+  const padTop = 24;
+  const mapX = x + 4;
+  const mapY = y + padTop;
+  const mapW = Math.max(40, w - 8);
+  const mapH = Math.max(40, h - padTop - 4);
+  const clipId = `wa-map-clip-${clipIdSuffix}`;
+
+  const nodes = geoNodes && geoNodes.length > 0 ? geoNodes : INITIAL_WA_GEO_NODES;
+  const sps = spsCoord || GOLAPBAG_SPS_COORD;
+
+  const viewport = useMemo(
+    () => buildGeoViewport([...nodes, sps], mapX, mapY, mapW, mapH, 0.11),
+    [nodes, sps, mapX, mapY, mapW, mapH]
+  );
+
+  const scaleFactor = Math.min(1.45, 1580 / Math.max(1, mapW, mapH));
+  const tilePxW = Math.max(360, Math.round(mapW * scaleFactor));
+  const tilePxH = Math.max(360, Math.round(mapH * scaleFactor));
+
+  const tileDataUrl = useMapTileSnapshot(
+    viewport,
+    settings.showMapBackground,
+    settings.mapStyle,
+    tilePxW,
+    tilePxH
+  );
+
+  const shaftById = useMemo(() => {
+    const m = new Map<string, ShaftRecord>();
+    for (const s of shafts) m.set(s.id, s);
+    return m;
+  }, [shafts]);
+
+  const totalLenM = shafts.reduce((acc, s) => acc + s.tunnelLengthM, 0);
+  const doneLenM = shafts.reduce(
+    (acc, s) => acc + (s.tunnelLengthM * s.tunnelPct) / 100,
+    0
+  );
+  const spsPt = viewport.project(sps.lat, sps.lon);
+
+  return (
+    <g>
+      <defs>
+        <clipPath id={clipId}>
+          <rect x={mapX} y={mapY} width={mapW} height={mapH} />
+        </clipPath>
+      </defs>
+
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        fill="#ffffff"
+        stroke="#1e3a8a"
+        strokeWidth={1.1}
+      />
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={padTop}
+        fill="#eff6ff"
+        stroke="#1e3a8a"
+        strokeWidth={0.8}
+      />
+      <rect x={x + 4} y={y + 2.5} width={26} height={padTop - 5} rx={3} fill="#15803d" />
+      <text
+        x={x + 17}
+        y={y + 16}
+        textAnchor="middle"
+        fontSize={9.5}
+        fontWeight="900"
+        fill="#ffffff"
+      >
+        WA
+      </text>
+      <text
+        x={x + 34}
+        y={y + 16}
+        fontSize={8.2}
+        fontWeight="800"
+        fill="#14532d"
+      >
+        NAVIGATION MAP
+      </text>
+      <text
+        x={x + w - 7}
+        y={y + 16}
+        textAnchor="end"
+        fontSize={6.8}
+        fontWeight="700"
+        fill="#15803d"
+      >
+        {(doneLenM / 1000).toFixed(2)}/{(totalLenM / 1000).toFixed(2)} km
+      </text>
+
+      <rect x={mapX} y={mapY} width={mapW} height={mapH} fill="#f1f5f9" />
+
+      <g clipPath={`url(#${clipId})`}>
+        {tileDataUrl ? (
+          <image
+            href={tileDataUrl}
+            x={mapX}
+            y={mapY}
+            width={mapW}
+            height={mapH}
+            preserveAspectRatio="none"
+          />
+        ) : (
+          <g>
+            {Array.from({ length: 8 }).map((_, gi) => {
+              const gx = mapX + ((gi + 1) / 9) * mapW;
+              const gy = mapY + ((gi + 1) / 9) * mapH;
+              return (
+                <g key={gi}>
+                  <line x1={gx} y1={mapY} x2={gx} y2={mapY + mapH} stroke="#cbd5e1" strokeWidth={0.5} strokeDasharray="3,3" />
+                  <line x1={mapX} y1={gy} x2={mapX + mapW} y2={gy} stroke="#cbd5e1" strokeWidth={0.5} strokeDasharray="3,3" />
+                </g>
+              );
+            })}
+          </g>
+        )}
+
+        {/* WA Micro-tunnelling segments WA-1 -> WA-36 -> Golapbag SPS */}
+        {nodes.map((gNode, idx) => {
+          const p1 = viewport.project(gNode.lat, gNode.lon);
+          const p2 =
+            idx < nodes.length - 1
+              ? viewport.project(nodes[idx + 1].lat, nodes[idx + 1].lon)
+              : spsPt;
+          const sh = shaftById.get(gNode.id);
+          const mtStatus = sh ? getTunnelStatus(sh) : 'remaining';
+          const prevSh = baselineShafts && sh ? baselineShafts[sh.id] : undefined;
+          const hasNewTunnel =
+            viewMode !== 'overall' && sh && prevSh && sh.tunnelPct > (prevSh.tunnelPct ?? 0);
+          const stroke =
+            mtStatus === 'complete'
+              ? '#16a34a'
+              : mtStatus === 'ongoing'
+              ? '#2563eb'
+              : '#dc2626';
+          return (
+            <g key={`wa-mini-seg-${gNode.id}`}>
+              <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#ffffff" strokeWidth={5.6} strokeLinecap="round" />
+              <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={stroke} strokeWidth={3.6} strokeLinecap="round" />
+              {hasNewTunnel && (
+                <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={highlightColor} strokeWidth={4.0} strokeLinecap="round" />
+              )}
+            </g>
+          );
+        })}
+
+        {/* Golapbag SPS marker (compact diamond/pill so WA-34/35/36 stay unobstructed) */}
+        <g>
+          <rect
+            x={spsPt.x - 10}
+            y={spsPt.y - 6}
+            width={20}
+            height={12}
+            rx={2.5}
+            fill="#fbcfe8"
+            stroke="#9d174d"
+            strokeWidth={1.4}
+          />
+          <text x={spsPt.x} y={spsPt.y + 2.2} textAnchor="middle" fontSize={6.0} fontWeight="900" fill="#831843">
+            SPS
+          </text>
+        </g>
+
+        {/* WA Shaft Nodes with clean alternating + edge-clamped labels */}
+        {(() => {
+          let lastLx = -9999;
+          let lastLy = -9999;
+          const minDist = 14;
+
+          return nodes.map((gNode, idx) => {
+            const pt = viewport.project(gNode.lat, gNode.lon);
+            const sh = shaftById.get(gNode.id);
+            const st = sh ? getShaftStatus(sh) : 'remaining';
+            const col = nodeColors(st);
+            const isSel = selectedShaftId === gNode.id;
+            const prevSh = baselineShafts && sh ? baselineShafts[sh.id] : undefined;
+            const hasNewShaft =
+              viewMode !== 'overall' &&
+              sh &&
+              prevSh &&
+              ((sh.layerFlags || []).filter(Boolean).length > (prevSh.layerFlags || []).filter(Boolean).length ||
+                sh.castingPct > (prevSh.castingPct ?? 0) ||
+                sh.precastPct > (prevSh.precastPct ?? 0));
+            const r = isSel ? 5.6 : 4.1;
+            const isEnd = idx === 0 || idx === nodes.length - 1 || isSel || gNode.id === 'WA-24.1';
+            const farEnough = Math.hypot(pt.x - lastLx, pt.y - lastLy) >= minDist;
+            const showLbl = isEnd || farEnough;
+            if (showLbl) {
+              lastLx = pt.x;
+              lastLy = pt.y;
+            }
+            let sideRight = idx <= 4 ? idx % 2 === 0 : idx % 2 === 1;
+            if (gNode.id === 'WA-35') sideRight = true;
+            else if (gNode.id === 'WA-36' || gNode.id === 'WA-34') sideRight = false;
+            else if (pt.x > mapX + mapW - 44) sideRight = false;
+            else if (pt.x < mapX + 44) sideRight = true;
+            const lx = sideRight ? pt.x + r + 4 : pt.x - r - 4;
+            const anchor = sideRight ? 'start' : 'end';
+            const dispName = gNode.id.replace('-', ' ');
+
+            return (
+              <g
+                key={gNode.id}
+                style={{ cursor: onSelectShaft ? 'pointer' : 'default' }}
+                onClick={(e) => {
+                  if (onSelectShaft) {
+                    e.stopPropagation();
+                    onSelectShaft(gNode.id);
+                  }
+                }}
+              >
+                {hasNewShaft && (
+                  <rect
+                    x={pt.x - r - 3}
+                    y={pt.y - r - 3}
+                    width={(r + 3) * 2}
+                    height={(r + 3) * 2}
+                    rx={2.5}
+                    fill="none"
+                    stroke={highlightColor}
+                    strokeWidth={2.0}
+                  />
+                )}
+                {isSel && (
+                  <rect
+                    x={pt.x - r - 2.8}
+                    y={pt.y - r - 2.8}
+                    width={(r + 2.8) * 2}
+                    height={(r + 2.8) * 2}
+                    rx={2.5}
+                    fill="none"
+                    stroke="#0284c7"
+                    strokeWidth={1.6}
+                  />
+                )}
+                <rect
+                  x={pt.x - r}
+                  y={pt.y - r}
+                  width={r * 2}
+                  height={r * 2}
+                  rx={1.5}
+                  fill="#ffffff"
+                  stroke={col.stroke}
+                  strokeWidth={1.6}
+                />
+                <circle cx={pt.x} cy={pt.y} r={r * 0.48} fill={col.fill} />
+                {showLbl && (
+                  <g>
+                    <rect
+                      x={sideRight ? lx - 1.5 : lx - 30}
+                      y={pt.y - 6}
+                      width={32}
+                      height={11}
+                      rx={1.5}
+                      fill="#ffffff"
+                      fillOpacity={0.9}
+                    />
+                    <text
+                      x={lx}
+                      y={pt.y + 2.5}
+                      textAnchor={anchor}
+                      fontSize={7.2}
+                      fontWeight="800"
+                      fill="#0f172a"
+                    >
+                      {dispName}
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          });
+        })()}
+
+        {/* Custom Added Points */}
+        {(customPoints || []).map((cp) => {
+          const cpp = viewport.project(cp.lat, cp.lon);
+          return (
+            <g key={cp.id}>
+              <circle cx={cpp.x} cy={cpp.y} r={4.8} fill="#fef3c7" stroke="#b45309" strokeWidth={1.3} />
+              <text x={cpp.x + 6} y={cpp.y + 2} fontSize={6.8} fontWeight="800" fill="#78350f">
+                {cp.name}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* North arrow */}
+        <g transform={`translate(${mapX + mapW - 18}, ${mapY + 18})`}>
+          <circle cx={0} cy={0} r={10} fill="#ffffff" fillOpacity={0.9} stroke="#475569" strokeWidth={0.8} />
+          <polygon points="0,-7.5 -3.2,3 0,1 3.2,3" fill="#1e3a8a" />
+          <text x={0} y={8} textAnchor="middle" fontSize={4.8} fontWeight="700" fill="#1e3a8a">N</text>
+        </g>
+
+        {/* Bottom-Left Compact Legend */}
+        <g transform={`translate(${mapX + 6}, ${mapY + mapH - (viewMode !== 'overall' ? 66 : 54)})`}>
+          <rect
+            x={0}
+            y={0}
+            width={132}
+            height={viewMode !== 'overall' ? 60 : 48}
+            rx={3}
+            fill="#ffffff"
+            fillOpacity={0.93}
+            stroke="#475569"
+            strokeWidth={0.7}
+          />
+          <line x1={6} y1={10} x2={22} y2={10} stroke="#16a34a" strokeWidth={3.0} />
+          <text x={27} y={12.5} fontSize={6.5} fontWeight="700" fill="#0f172a">Complete</text>
+          <line x1={6} y1={21} x2={22} y2={21} stroke="#2563eb" strokeWidth={3.0} />
+          <text x={27} y={23.5} fontSize={6.5} fontWeight="700" fill="#1e3a8a">On-Going</text>
+          <line x1={6} y1={31} x2={22} y2={31} stroke="#dc2626" strokeWidth={3.0} />
+          <text x={27} y={33.5} fontSize={6.5} fontWeight="700" fill="#991b1b">Remaining</text>
+          <rect x={8} y={37.5} width={12} height={7} fill="#fbcfe8" stroke="#9d174d" strokeWidth={1.0} />
+          <text x={27} y={43} fontSize={6.4} fontWeight="700" fill="#831843">Golapbag SPS</text>
+          {viewMode !== 'overall' && (
+            <g>
+              <line x1={6} y1={52} x2={22} y2={52} stroke={highlightColor} strokeWidth={3.2} />
+              <text x={27} y={54.5} fontSize={6.5} fontWeight="800" fill="#ea580c">New (Compare)</text>
+            </g>
+          )}
         </g>
       </g>
 

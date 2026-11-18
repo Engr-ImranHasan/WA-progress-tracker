@@ -59,21 +59,24 @@ function sanitizeSvgCloneForExport(svgEl: SVGSVGElement, w: string, h: string): 
 
 export async function preloadSectionMapSnapshots(state: AppState): Promise<void> {
   if (!state.settings.showMapBackground || state.settings.mapStyle === 'cad') return;
-  // Standalone WB page: x=22, y=58, w=950, h=926 (padTop=26) -> mapX=26, mapY=84, mapW=942, mapH=896
-  const wbFullVp = buildGeoViewport(state.wb.nodes, 26, 84, 942, 896, 0.1);
-  // Combined side-by-side WB map: x=922, y=704, w=368, h=464 -> mapX=926, mapY=723, mapW=360, mapH=441
-  const wbCompactVp = buildGeoViewport(state.wb.nodes, 926, 723, 360, 441, 0.12);
-  // Standalone WC page: x=22, y=720, w=1638, h=268 (padTop=24) -> mapX=26, mapY=744, mapW=1630, mapH=240
-  const wcFullVp = buildGeoViewport(state.wc.geoNodes, 26, 744, 1630, 240, 0.12);
-  // Combined side-by-side WC map: x=1296, y=704, w=368, h=464 -> mapX=1300, mapY=723, mapW=360, mapH=441
-  const wcCompactVp = buildGeoViewport(state.wc.geoNodes, 1300, 723, 360, 441, 0.12);
-
-  // Full-A1 Portrait GIS Map Pages (Pages 2, 3, 4 in 5-Page PDF: x=44, y=86, w=1100, h=1558, padRatio=0.09, 1120x1594)
   const waNodes =
     state.waGeoNodes && state.waGeoNodes.length > 0
       ? state.waGeoNodes
       : INITIAL_WA_GEO_NODES;
   const spsCoord = state.spsCoord || GOLAPBAG_SPS_COORD;
+
+  // Standalone WA page right-side vertical map: x=1318, y=58, w=342, h=930 -> mapX=1322, mapY=82, mapW=334, mapH=902
+  const waVerticalVp = buildGeoViewport([...waNodes, spsCoord], 1322, 82, 334, 902, 0.11);
+  // Standalone WB page: x=22, y=58, w=950, h=926 (padTop=26) -> mapX=26, mapY=84, mapW=942, mapH=896
+  const wbFullVp = buildGeoViewport(state.wb.nodes, 26, 84, 942, 896, 0.1);
+  // Combined side-by-side WB map: x=922, y=704, w=368, h=464 -> mapX=926, mapY=723, mapW=360, mapH=441
+  const wbCompactVp = buildGeoViewport(state.wb.nodes, 926, 723, 360, 441, 0.12);
+  // Standalone WC page right-side vertical map: x=1318, y=58, w=342, h=930 -> mapX=1322, mapY=82, mapW=334, mapH=902
+  const wcFullVp = buildGeoViewport(state.wc.geoNodes, 1322, 82, 334, 902, 0.11);
+  // Combined side-by-side WC map: x=1296, y=704, w=368, h=464 -> mapX=1300, mapY=723, mapW=360, mapH=441
+  const wcCompactVp = buildGeoViewport(state.wc.geoNodes, 1300, 723, 360, 441, 0.12);
+
+  // Full-A1 Portrait GIS Map Pages (Pages 2, 3, 4 in 5-Page PDF: x=44, y=86, w=1100, h=1558, padRatio=0.09, 1120x1594)
   const waFullA1Vp = buildGeoViewport(
     [...waNodes, spsCoord],
     44,
@@ -101,14 +104,19 @@ export async function preloadSectionMapSnapshots(state: AppState): Promise<void>
   const wbFullH = Math.min(1100, Math.max(420, Math.round(896 * 1.35)));
   const compactW = Math.min(1100, Math.max(480, Math.round(360 * 1.55)));
   const compactH = Math.min(1100, Math.max(420, Math.round(441 * 1.55)));
-  const wcFullW = Math.min(1100, Math.max(480, Math.round(1630 * 1.35)));
-  const wcFullH = Math.min(1100, Math.max(420, Math.round(240 * 1.35)));
+  const wcCompactScale = Math.min(1.55, 1580 / 441);
+  const wcCompactW = Math.max(360, Math.round(360 * wcCompactScale));
+  const wcCompactH = Math.max(360, Math.round(441 * wcCompactScale));
+  const vertScale = Math.min(1.45, 1580 / 902);
+  const vertW = Math.max(360, Math.round(334 * vertScale));
+  const vertH = Math.max(360, Math.round(902 * vertScale));
 
   await Promise.all([
+    ensureMapTileSnapshot(waVerticalVp, state.settings.mapStyle, vertW, vertH),
     ensureMapTileSnapshot(wbFullVp, state.settings.mapStyle, wbFullW, wbFullH),
     ensureMapTileSnapshot(wbCompactVp, state.settings.mapStyle, compactW, compactH),
-    ensureMapTileSnapshot(wcFullVp, state.settings.mapStyle, wcFullW, wcFullH),
-    ensureMapTileSnapshot(wcCompactVp, state.settings.mapStyle, compactW, compactH),
+    ensureMapTileSnapshot(wcFullVp, state.settings.mapStyle, vertW, vertH),
+    ensureMapTileSnapshot(wcCompactVp, state.settings.mapStyle, wcCompactW, wcCompactH),
     ensureMapTileSnapshot(waFullA1Vp, state.settings.mapStyle, 1120, 1594),
     ensureMapTileSnapshot(wbFullA1Vp, state.settings.mapStyle, 1120, 1594),
     ensureMapTileSnapshot(wcFullA1Vp, state.settings.mapStyle, 1120, 1594),
