@@ -59,7 +59,7 @@ const SHEET_H = 1682;
 const GIS_GREEN = '#16a34a';
 const GIS_BLUE = '#2563eb';
 const GIS_RED = '#dc2626';
-const GIS_HIGHLIGHT = '#f59e0b';
+const GIS_HIGHLIGHT = '#f97316';
 
 function trunc(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + '...' : s;
@@ -923,7 +923,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
     <svg
       ref={svgRef}
       viewBox={`0 0 ${SHEET_W} ${SHEET_H}`}
-      className="w-full h-auto bg-white select-none"
+      className="print-sheet-svg w-full h-auto bg-white select-none"
       style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
     >
       <defs>
@@ -964,8 +964,8 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
         width={276}
         height={40}
         rx={4}
-        fill={viewMode === 'weekly' ? '#fffbeb' : viewMode === 'monthly' ? '#ecfeff' : '#f0fdf4'}
-        stroke={viewMode === 'weekly' ? '#d97706' : viewMode === 'monthly' ? '#0891b2' : '#16a34a'}
+        fill={viewMode === 'overall' ? '#f0fdf4' : '#fff7ed'}
+        stroke={viewMode === 'overall' ? '#16a34a' : '#ea580c'}
         strokeWidth={1.0}
       />
       <text x={SHEET_W - 160} y={38} textAnchor="middle" fontSize={7.2} fontWeight="800" fill="#0f172a">
@@ -1106,8 +1106,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                         x2={p2.x}
                         y2={p2.y}
                         stroke={GIS_HIGHLIGHT}
-                        strokeWidth={2.5}
-                        strokeDasharray="6,4"
+                        strokeWidth={5.4}
                         strokeLinecap="round"
                       />
                     )}
@@ -1356,9 +1355,9 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                 </text>
                 {viewMode !== 'overall' && (
                   <g>
-                    <line x1={200} y1={288} x2={220} y2={288} stroke={GIS_HIGHLIGHT} strokeWidth={3.4} strokeDasharray="4,2" />
-                    <text x={225} y={291} fontSize={8.2} fontWeight="700" fill="#b45309">
-                      New ({file2Label})
+                    <line x1={200} y1={288} x2={220} y2={288} stroke={GIS_HIGHLIGHT} strokeWidth={4.4} strokeLinecap="round" />
+                    <text x={225} y={291} fontSize={7.6} fontWeight="800" fill="#ea580c">
+                      {trunc(`New (${file2Label})`, 22)}
                     </text>
                   </g>
                 )}
@@ -1770,9 +1769,9 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
 
                 {viewMode !== 'overall' && (
                   <g>
-                    <line x1={16} y1={209} x2={48} y2={209} stroke={GIS_HIGHLIGHT} strokeWidth={4.8} strokeLinecap="round" />
-                    <text x={58} y={212.5} fontSize={8.6} fontWeight="700" fill="#b45309">
-                      Added ({file2Label}): +{Math.max(0, wbData.completedLengthM - (wbPrevCompletedM ?? wbData.completedLengthM)).toFixed(1)} m
+                    <line x1={16} y1={209} x2={48} y2={209} stroke={GIS_HIGHLIGHT} strokeWidth={5.2} strokeLinecap="round" />
+                    <text x={58} y={212.5} fontSize={8.0} fontWeight="800" fill="#ea580c">
+                      {trunc(`Added (${file2Label}): +${Math.max(0, wbData.completedLengthM - (wbPrevCompletedM ?? wbData.completedLengthM)).toFixed(1)} m`, 42)}
                     </text>
                   </g>
                 )}
@@ -1903,8 +1902,7 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                         x2={p2.x}
                         y2={p2.y}
                         stroke={GIS_HIGHLIGHT}
-                        strokeWidth={2.5}
-                        strokeDasharray="6,4"
+                        strokeWidth={5.4}
                         strokeLinecap="round"
                       />
                     )}
@@ -2130,6 +2128,14 @@ export const FullPageGisMapSheet: React.FC<FullPageGisMapProps> = ({
                 <text x={224} y={268} fontSize={8.6} fontWeight="700" fill="#1e3a8a">Pagla STP</text>
                 <rect x={202} y={277} width={16} height={9} fill="#1e293b" fillOpacity={0.28} stroke="#0f172a" strokeWidth={1.3} />
                 <text x={224} y={285} fontSize={8.4} fontWeight="700" fill="#0f172a">Underpass / Siphon</text>
+                {viewMode !== 'overall' && (
+                  <g>
+                    <line x1={200} y1={302} x2={220} y2={302} stroke={GIS_HIGHLIGHT} strokeWidth={4.4} strokeLinecap="round" />
+                    <text x={225} y={305} fontSize={7.6} fontWeight="800" fill="#ea580c">
+                      {trunc(`New (${file2Label})`, 22)}
+                    </text>
+                  </g>
+                )}
 
                 <line x1={12} y1={317} x2={342} y2={317} stroke="#cbd5e1" strokeWidth={0.9} />
 

@@ -667,6 +667,14 @@ export function sanitizeLoadedState(
         }))
       : fallback.savedFiles;
 
+  const rawColors = { ...fallback.colors, ...(parsed.colors || {}) };
+  if (rawColors.thisWeekHighlight?.toLowerCase() === '#f59e0b') {
+    rawColors.thisWeekHighlight = '#f97316';
+  }
+  if (rawColors.thisMonthHighlight?.toLowerCase() === '#06b6d4') {
+    rawColors.thisMonthHighlight = '#f97316';
+  }
+
   return {
     ...fallback,
     ...parsed,
@@ -678,6 +686,7 @@ export function sanitizeLoadedState(
     waGeoNodes,
     spsCoord,
     waCustomPoints,
+    customView: parsed.customView || fallback.customView,
     savedFiles,
     activeLoadedFileId: parsed.activeLoadedFileId ?? null,
     weeklyCompare: parsed.weeklyCompare || {
@@ -688,7 +697,7 @@ export function sanitizeLoadedState(
       file1Id: savedFiles[0]?.id || '',
       file2Id: LIVE_WORKSPACE_ID,
     },
-    colors: { ...fallback.colors, ...(parsed.colors || {}) },
+    colors: rawColors,
     settings: { ...fallback.settings, ...(parsed.settings || {}) },
     weeklyBaseline: normalizeBaselineSheetPile(parsed.weeklyBaseline, fallback.weeklyBaseline),
     monthlyBaseline: normalizeBaselineSheetPile(parsed.monthlyBaseline, fallback.monthlyBaseline),

@@ -50,7 +50,7 @@ export const WbNavigationMapGroup: React.FC<WbMapProps> = ({
   settings,
   viewMode,
   prevCompletedLengthM,
-  highlightColor = '#f59e0b',
+  highlightColor = '#f97316',
   selectedNodeId,
   onSelectNode,
   compact = false,

@@ -1,6 +1,14 @@
 export type WorkStatus = 'remaining' | 'ongoing' | 'complete';
 export type ViewMode = 'overall' | 'weekly' | 'monthly';
-export type SectionTab = 'wa' | 'wb' | 'wc' | 'combined' | 'wa-map' | 'wb-map' | 'wc-map';
+export type SectionTab =
+  | 'wa'
+  | 'wb'
+  | 'wc'
+  | 'combined'
+  | 'custom'
+  | 'wa-map'
+  | 'wb-map'
+  | 'wc-map';
 export type PdfSheetKey = SectionTab | 'wc-status';
 export type LayoutMode = '10col' | '12col';
 export type UiLang = 'bn' | 'en';
@@ -218,6 +226,13 @@ export interface SheetSettings {
   waTunnelDiaTotalsM?: Partial<Record<PipeDia, number>>;
 }
 
+export interface CustomShaftViewConfig {
+  section: 'wa' | 'wc';
+  selectedIds: string[];
+  showTunneling: boolean;
+  includePumpStation: boolean;
+}
+
 export interface AppState {
   version: number;
   lastSavedAt: string;
@@ -233,6 +248,7 @@ export interface AppState {
   waGeoNodes?: GeoNodeCoord[];
   spsCoord?: { lat: number; lon: number };
   waCustomPoints?: CustomMapPoint[];
+  customView?: CustomShaftViewConfig;
   savedFiles: SavedProgressFile[];
   activeLoadedFileId: string | null;
   weeklyCompare: ComparePairSelection;

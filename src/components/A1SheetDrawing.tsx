@@ -84,6 +84,34 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
     file2Label,
   } = resolveDisplayContext(state);
 
+  const customCfg = state.customView || {
+    section: 'wa' as const,
+    selectedIds: ['WA-17', 'WA-18', 'WA-19', 'WA-20', 'WA-21', 'WA-22', 'WA-23', 'WA-24'],
+    showTunneling: true,
+    includePumpStation: false,
+  };
+  const customSourceShafts = customCfg.section === 'wc' ? wcData.shafts : waShafts;
+  const customSelectedSet = new Set(customCfg.selectedIds);
+  const customShafts = customSourceShafts.filter((s) => customSelectedSet.has(s.id));
+  const customBaselineMap =
+    customCfg.section === 'wc' ? baseline.wcShafts || {} : baseline.shafts;
+  const customHasPump =
+    customCfg.section === 'wa' &&
+    customCfg.includePumpStation &&
+    customShafts.some((s) => s.id === 'WA-36');
+  const customSummary = computeSummary(
+    customShafts,
+    baseline,
+    customHasPump ? pumpStation : undefined,
+    customCfg.section === 'wc' ? baseline.wcShafts : undefined
+  );
+  const customRangeText =
+    customShafts.length === 0
+      ? 'NO SHAFTS SELECTED'
+      : customShafts.length === 1
+      ? customShafts[0].id
+      : `${customShafts[0].id} TO ${customShafts[customShafts.length - 1].id} (${customShafts.length} Nos)`;
+
   const waSummary = computeSummary(
     waShafts,
     baseline,
@@ -101,7 +129,11 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       : 'OVERALL CONSTRUCTION STATUS';
 
   const currHighlight =
-    viewMode === 'monthly' ? colors.thisMonthHighlight : colors.thisWeekHighlight;
+    viewMode === 'overall'
+      ? colors.thisWeekHighlight
+      : viewMode === 'monthly'
+      ? colors.thisMonthHighlight || '#f97316'
+      : colors.thisWeekHighlight || '#f97316';
 
   const getLayerFill = (
     shaft: ShaftRecord,
@@ -364,9 +396,21 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       rowH: number;
       connectLastToPump: boolean;
       pumpStructAbsX?: number;
+      showTunneling?: boolean;
+      showLastOutgoingTunnel?: boolean;
     }
   ) => {
-    const { cols, gridX, gridY, gridW, rowH, connectLastToPump, pumpStructAbsX } = opts;
+    const {
+      cols,
+      gridX,
+      gridY,
+      gridW,
+      rowH,
+      connectLastToPump,
+      pumpStructAbsX,
+      showTunneling = true,
+      showLastOutgoingTunnel = false,
+    } = opts;
     const colW = gridW / cols;
     const sx = colW / 158.4;
 
@@ -987,7 +1031,11 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           </g>
 
           {/* --- TUNNEL CONNECTION BAR TO NEXT SHAFT (FLUSH AGAINST BOTH WALLS — FIX #1!) --- */}
-          {!isLastInRow && !isLastShaft && hasOutgoingTunnel &&
+          {showTunneling &&
+            !isLastInRow &&
+            !isLastShaft &&
+            hasOutgoingTunnel &&
+            shaftList[idx + 1]?.id === s.nextId &&
             renderTunnelBar(
               s,
               wallRightX + wallThick,
@@ -999,21 +1047,46 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               bSnap
             )}
 
+          {/* Non-contiguous selected shafts: clean outgoing stub "To nextId" without touching an unrelated neighbor */}
+          {showTunneling &&
+            !isLastInRow &&
+            !isLastShaft &&
+            hasOutgoingTunnel &&
+            shaftList[idx + 1]?.id !== s.nextId &&
+            renderTunnelBar(
+              s,
+              wallRightX + wallThick,
+              tunnelBarY,
+              Math.max(46 * sx, colW + wallLeftX - (wallRightX + wallThick) - 18 * sx),
+              10,
+              100,
+              'exit',
+              bSnap
+            )}
+
           {/* Exiting 10%..50% bar at right end of row */}
-          {isLastInRow && !isLastShaft && hasOutgoingTunnel &&
+          {showTunneling &&
+            isLastInRow &&
+            !isLastShaft &&
+            hasOutgoingTunnel &&
             renderTunnelBar(
               s,
               wallRightX + wallThick,
               tunnelBarY,
               colW - (wallRightX + wallThick) + 34,
               10,
-              50,
+              shaftList[idx + 1]?.id === s.nextId ? 50 : 100,
               'exit',
               bSnap
             )}
 
           {/* Incoming 60%..100% bar flush against left wall at start of row > 0 */}
-          {col === 0 && row > 0 && idx > 0 && shaftList[idx - 1].tunnelLengthM > 0 &&
+          {showTunneling &&
+            col === 0 &&
+            row > 0 &&
+            idx > 0 &&
+            shaftList[idx - 1].tunnelLengthM > 0 &&
+            shaftList[idx - 1].nextId === s.id &&
             renderTunnelBar(
               shaftList[idx - 1],
               -28,
@@ -1026,7 +1099,10 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             )}
 
           {/* Last Shaft (WA-36 -> Pump Station) flush into Pump Station left caisson wall */}
-          {isLastShaft && connectLastToPump && hasOutgoingTunnel &&
+          {showTunneling &&
+            isLastShaft &&
+            connectLastToPump &&
+            hasOutgoingTunnel &&
             renderTunnelBar(
               s,
               wallRightX + wallThick,
@@ -1037,6 +1113,23 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               10,
               100,
               'pump',
+              bSnap
+            )}
+
+          {/* Custom View: Last Selected Shaft outgoing tunnel segment (when Pump Station not shown) */}
+          {showTunneling &&
+            isLastShaft &&
+            !connectLastToPump &&
+            showLastOutgoingTunnel &&
+            hasOutgoingTunnel &&
+            renderTunnelBar(
+              s,
+              wallRightX + wallThick,
+              tunnelBarY,
+              114 * sx,
+              10,
+              100,
+              'exit',
               bSnap
             )}
         </g>
@@ -1081,6 +1174,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
       prevDone: boolean
     ): { fill: string; stroke: string; badgeBg: string; badgeText: string } => {
       if (status === 'complete') {
+        const isCompNew = viewMode !== 'overall' && !prevDone;
         const fill =
           viewMode === 'overall'
             ? colors.overallShaft
@@ -1091,9 +1185,9 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
             : currHighlight;
         return {
           fill,
-          stroke: '#14532d',
-          badgeBg: '#dcfce7',
-          badgeText: '#15803d',
+          stroke: isCompNew ? '#9a3412' : '#14532d',
+          badgeBg: isCompNew ? '#ffedd5' : '#dcfce7',
+          badgeText: isCompNew ? '#c2410c' : '#15803d',
         };
       }
       if (status === 'ongoing') {
@@ -1748,7 +1842,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
               y={showCompactDelta ? 8.3 : compact ? 10 : 9.8}
               fontSize={fItem}
               fontWeight={'bold' in item && item.bold ? '700' : '600'}
-              fill={'bold' in item && item.bold ? '#b45309' : '#0f172a'}
+              fill={'bold' in item && item.bold ? '#ea580c' : '#0f172a'}
             >
               {item.label}
             </text>
@@ -1764,18 +1858,18 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
           <text x={compact ? 136 : 145} y={0.5} fontSize={showCompactDelta ? 6.6 : compact ? 7.0 : 6.8} fontWeight="600" fill="#334155">Rem.</text>
         </g>
 
-        {/* COMPARISON DELTA BOX (ONLY IN COMPARISON MODE) */}
+        {/* COMPARISON DELTA BOX (ONLY IN COMPARISON MODE — ORANGE HIGHLIGHT) */}
         {showCompactDelta && (
           <g>
-            <rect x={legX} y={deltaY} width={legW} height={deltaH} fill="#fffbeb" stroke="#d97706" strokeWidth={1.1} />
-            <rect x={legX} y={deltaY} width={legW} height={deltaHdrH} fill="#fef3c7" stroke="#d97706" strokeWidth={0.8} />
+            <rect x={legX} y={deltaY} width={legW} height={deltaH} fill="#fff7ed" stroke="#ea580c" strokeWidth={1.1} />
+            <rect x={legX} y={deltaY} width={legW} height={deltaHdrH} fill="#ffedd5" stroke="#ea580c" strokeWidth={0.8} />
             <text
               x={legX + legW / 2}
               y={deltaY + 12.2}
               textAnchor="middle"
               fontSize={8.2}
               fontWeight="700"
-              fill="#92400e"
+              fill="#9a3412"
             >
               {viewMode === 'weekly' ? 'WEEKLY DELTA (NEW)' : 'MONTHLY DELTA (NEW)'}
             </text>
@@ -1786,7 +1880,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 textAnchor="middle"
                 fontSize={7.2}
                 fontWeight="600"
-                fill="#78350f"
+                fill="#9a3412"
               >
                 No new progress recorded
               </text>
@@ -1808,7 +1902,7 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                     textAnchor="end"
                     fontSize={dFont}
                     fontWeight="700"
-                    fill={row.color}
+                    fill="#c2410c"
                   >
                     {row.value}
                   </text>
@@ -1881,6 +1975,10 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
   const sectionLabelFull =
     activeSection === 'wc-status'
       ? 'WC SECTION — SHAFTS, MANHOLES & MICRO-TUNNELLING STATUS (WC-1 TO WC-27)'
+      : activeSection === 'custom'
+      ? `CUSTOM ${customCfg.section.toUpperCase()} SELECTION — SHAFTS, MANHOLES & ${
+          customCfg.showTunneling ? 'MICRO-TUNNELLING' : 'STATUS'
+        } (${customRangeText})`
       : settings.sectionTitle && settings.sectionTitle !== 'WA Section — Shafts, Manholes & Micro-Tunnelling'
       ? settings.sectionTitle
       : activeSection === 'combined'
@@ -1924,19 +2022,15 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
         {settings.projectTitle}  |  Sheet: {settings.sheetFormatLabel?.trim() || 'ISO A1 (841 x 594 mm)'}
       </text>
 
-      {/* Active Mode Banner Pill */}
+      {/* Active Mode Banner Pill (Orange in Weekly/Monthly comparison, Green in Overall) */}
       <rect
         x={1060}
         y={21}
         width={592}
         height={26}
         rx={3}
-        fill={
-          viewMode === 'weekly' ? '#fffbeb' : viewMode === 'monthly' ? '#ecfeff' : '#f0fdf4'
-        }
-        stroke={
-          viewMode === 'weekly' ? '#d97706' : viewMode === 'monthly' ? '#0891b2' : '#16a34a'
-        }
+        fill={viewMode === 'overall' ? '#f0fdf4' : '#fff7ed'}
+        stroke={viewMode === 'overall' ? '#16a34a' : '#ea580c'}
         strokeWidth={1.1}
       />
       <text x={1356} y={33} textAnchor="middle" fontSize={7.8} fontWeight="700" fill="#0f172a">
@@ -2027,12 +2121,12 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 </g>
               ) : (
                 <g>
-                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
-                  <text x={24} y={129} fontSize={7} fontWeight="700" fill="#92400e">
+                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#fff7ed" stroke="#ea580c" strokeWidth={0.8} />
+                  <text x={24} y={129} fontSize={7} fontWeight="700" fill="#9a3412">
                     {viewMode === 'weekly' ? 'WEEKLY DELTA (FILE 2 vs FILE 1):' : 'MONTHLY DELTA (FILE 2 vs FILE 1):'}
                   </text>
-                  <text x={24} y={142} fontSize={7} fill="#78350f">- Shaft Layers Added: +{waSummary.delta.addedLayers} layers</text>
-                  <text x={24} y={153} fontSize={7} fill="#78350f">- Shafts Completed: +{waSummary.delta.addedShaftsCompleted} Nos</text>
+                  <text x={24} y={142} fontSize={7} fill="#c2410c">- Shaft Layers Added: +{waSummary.delta.addedLayers} layers</text>
+                  <text x={24} y={153} fontSize={7} fill="#c2410c">- Shafts Completed: +{waSummary.delta.addedShaftsCompleted} Nos</text>
                 </g>
               )}
 
@@ -2072,8 +2166,8 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
 
               {viewMode !== 'overall' && (
                 <g>
-                  <rect x={562} y={133} width={354} height={24} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
-                  <text x={739} y={148} textAnchor="middle" fontSize={7.4} fontWeight="700" fill="#92400e">
+                  <rect x={562} y={133} width={354} height={24} rx={3} fill="#fff7ed" stroke="#ea580c" strokeWidth={0.8} />
+                  <text x={739} y={148} textAnchor="middle" fontSize={7.4} fontWeight="700" fill="#c2410c">
                     {viewMode === 'weekly' ? 'WEEKLY TUNNEL ADDED: ' : 'MONTHLY TUNNEL ADDED: '}
                     +{waSummary.delta.addedTunnelM.toFixed(1)} m ({(waSummary.delta.addedTunnelM / 1000).toFixed(3)} km)
                   </text>
@@ -2391,12 +2485,12 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
                 </g>
               ) : (
                 <g>
-                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
-                  <text x={24} y={129} fontSize={7} fontWeight="700" fill="#92400e">
+                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#fff7ed" stroke="#ea580c" strokeWidth={0.8} />
+                  <text x={24} y={129} fontSize={7} fontWeight="700" fill="#9a3412">
                     {viewMode === 'weekly' ? 'WEEKLY WC DELTA:' : 'MONTHLY WC DELTA:'}
                   </text>
-                  <text x={24} y={142} fontSize={7} fill="#78350f">- Shaft Layers Added: +{wcSummary.delta.addedLayers} layers</text>
-                  <text x={24} y={153} fontSize={7} fill="#78350f">- Shafts Completed: +{wcSummary.delta.addedShaftsCompleted} Nos</text>
+                  <text x={24} y={142} fontSize={7} fill="#c2410c">- Shaft Layers Added: +{wcSummary.delta.addedLayers} layers</text>
+                  <text x={24} y={153} fontSize={7} fill="#c2410c">- Shafts Completed: +{wcSummary.delta.addedShaftsCompleted} Nos</text>
                 </g>
               )}
 
@@ -2436,10 +2530,211 @@ export const A1SheetDrawing: React.FC<A1SheetDrawingProps> = ({
 
               {viewMode !== 'overall' && (
                 <g>
-                  <rect x={562} y={133} width={354} height={24} rx={3} fill="#fffbeb" stroke="#f59e0b" strokeWidth={0.7} />
-                  <text x={739} y={148} textAnchor="middle" fontSize={7.4} fontWeight="700" fill="#92400e">
+                  <rect x={562} y={133} width={354} height={24} rx={3} fill="#fff7ed" stroke="#ea580c" strokeWidth={0.8} />
+                  <text x={739} y={148} textAnchor="middle" fontSize={7.4} fontWeight="700" fill="#c2410c">
                     {viewMode === 'weekly' ? 'WEEKLY WC TUNNEL ADDED: ' : 'MONTHLY WC TUNNEL ADDED: '}
                     +{wcSummary.delta.addedTunnelM.toFixed(1)} m ({(wcSummary.delta.addedTunnelM / 1000).toFixed(3)} km)
+                  </text>
+                </g>
+              )}
+
+              {renderLegendAndTitle(938, 0, 374, 168, 1320, 0, 324, 168, false)}
+            </g>
+          </g>
+        );
+      })()}
+
+      {/* ===================================================================== */}
+      {/* VIEW 3C: CUSTOM WA/WC SELECTED SHAFTS & MICRO-TUNNELLING A1 SHEET      */}
+      {/* ===================================================================== */}
+      {activeSection === 'custom' && (() => {
+        const n = customShafts.length;
+        const cols =
+          n === 0
+            ? 1
+            : n <= 8
+            ? n
+            : n <= 16
+            ? Math.ceil(n / 2)
+            : n <= 27
+            ? Math.ceil(n / 3)
+            : 10;
+        const rows = n === 0 ? 1 : Math.ceil(n / cols);
+        const colW = 158.4;
+        const rowH = 232;
+        const lastIdx = Math.max(0, n - 1);
+        const lastCol = lastIdx % cols;
+        const lastRow = Math.floor(lastIdx / cols);
+        const lastShaft = n > 0 ? customShafts[lastIdx] : null;
+        const needsRightTunnelRoom =
+          customCfg.showTunneling && !customHasPump && Boolean(lastShaft && lastShaft.tunnelLengthM > 0);
+        const pumpNeedRight = customHasPump && lastCol === cols - 1;
+        const baseLeftPad = 38;
+        const rightContentCols = pumpNeedRight
+          ? cols + 2.3
+          : customHasPump
+          ? Math.max(cols, lastCol + 1 + 2.3)
+          : cols;
+        const baseRightPad = customHasPump ? 40 : needsRightTunnelRoom ? 140 : 26;
+        const natW = baseLeftPad + rightContentCols * colW + baseRightPad;
+        const natH = rows * rowH + 20;
+        const uScale = n === 0 ? 1 : Math.min(1.85, 1618 / natW, 908 / natH);
+        const offsetX = 24 + (1634 - natW * uScale) / 2;
+        const offsetY = 60 + (922 - natH * uScale) / 2;
+
+        const pumpRelX = baseLeftPad + (lastCol + 1) * colW + 24;
+        const pumpRelY = 10 + lastRow * rowH + 4;
+        const diaKeys = (
+          customCfg.section === 'wc'
+            ? ['DN1800', 'DN2400', 'DN2600']
+            : ['DN900', 'DN1100', 'DN1600']
+        ) as Array<keyof typeof customSummary.byDia>;
+
+        return (
+          <g>
+            {n === 0 ? (
+              <g>
+                <rect
+                  x={340}
+                  y={420}
+                  width={1000}
+                  height={160}
+                  rx={10}
+                  fill="#f8fafc"
+                  stroke="#94a3b8"
+                  strokeWidth={1.5}
+                  strokeDasharray="6,4"
+                />
+                <text x={840} y={488} textAnchor="middle" fontSize={18} fontWeight="700" fill="#1e3a8a">
+                  NO SHAFTS SELECTED IN CUSTOM VIEW
+                </text>
+                <text x={840} y={522} textAnchor="middle" fontSize={13} fontWeight="600" fill="#475569">
+                  Use the Custom Range or Multi-Select panel on the right to pick WA or WC shafts (e.g. WA-17 to WA-24).
+                </text>
+              </g>
+            ) : (
+              <g transform={`translate(${offsetX}, ${offsetY}) scale(${uScale})`}>
+                {Array.from({ length: Math.max(0, rows - 1) }).map((_, ri) => (
+                  <line
+                    key={ri}
+                    x1={-12}
+                    y1={10 + (ri + 1) * rowH - 3}
+                    x2={natW + 12}
+                    y2={10 + (ri + 1) * rowH - 3}
+                    stroke="#e2e8f0"
+                    strokeWidth={0.8}
+                    strokeDasharray="4,4"
+                  />
+                ))}
+
+                {renderShaftGrid(customShafts, customBaselineMap, {
+                  cols,
+                  gridX: baseLeftPad,
+                  gridY: 10,
+                  gridW: cols * colW,
+                  rowH,
+                  connectLastToPump: customHasPump,
+                  pumpStructAbsX: customHasPump ? pumpRelX + 6 : undefined,
+                  showTunneling: customCfg.showTunneling,
+                  showLastOutgoingTunnel: customCfg.showTunneling && !customHasPump,
+                })}
+
+                {customHasPump &&
+                  renderPumpStation(pumpStation, pumpRelX, pumpRelY, 340, 224)}
+              </g>
+            )}
+
+            {/* Custom Page Footer (Summary + Legend + Title Block) */}
+            <g transform="translate(16, 996)">
+              <rect x={6} y={0} width={924} height={168} fill="#ffffff" stroke="#1e3a8a" strokeWidth={1.1} />
+              <rect x={6} y={0} width={924} height={22} fill="#eff6ff" stroke="#1e3a8a" strokeWidth={0.8} />
+              <text x={468} y={15} textAnchor="middle" fontSize={10.5} fontWeight="700" fill="#1e3a8a">
+                CUSTOM {customCfg.section.toUpperCase()} SELECTION ({customRangeText}) - PROGRESS SUMMARY
+              </text>
+              <line x1={270} y1={22} x2={270} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
+              <line x1={550} y1={22} x2={550} y2={168} stroke="#1e3a8a" strokeWidth={0.7} />
+
+              <text x={138} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                SELECTED SHAFT PROGRESS ({customSummary.totalShafts} Nos)
+              </text>
+              <text x={20} y={55} fontSize={7.6} fill="#0f172a">SELECTED SHAFTS</text>
+              <text x={252} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {customSummary.totalShafts} Nos</text>
+              <text x={20} y={71} fontSize={7.6} fill="#15803d" fontWeight="600">COMPLETED SHAFT</text>
+              <text x={252} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#15803d">: {String(customSummary.completedShafts).padStart(2, '0')} Nos</text>
+              <text x={20} y={87} fontSize={7.6} fill="#b45309" fontWeight="600">ON-GOING SHAFT</text>
+              <text x={252} y={87} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#b45309">: {String(customSummary.ongoingShafts).padStart(2, '0')} Nos</text>
+              <text x={20} y={103} fontSize={7.6} fill="#dc2626">REMAINING SHAFT</text>
+              <text x={252} y={103} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#dc2626">: {String(customSummary.remainingShafts).padStart(2, '0')} Nos</text>
+
+              {viewMode === 'overall' ? (
+                <g>
+                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#f8fafc" stroke="#1e3a8a" strokeWidth={0.7} />
+                  <text x={24} y={128} fontSize={6.8} fontWeight="700" fill="#1e3a8a">CUSTOM SELECTION SCOPE:</text>
+                  <text x={24} y={140} fontSize={6.4} fill="#0f172a">
+                    - Section: {customCfg.section.toUpperCase()} ({customShafts.map((s) => s.id.replace(/^(WA|WC)-/, '')).slice(0, 12).join(', ')}{customShafts.length > 12 ? '...' : ''})
+                  </text>
+                  <text x={24} y={152} fontSize={6.4} fontWeight="700" fill="#0f766e">
+                    - Tunneling: {customCfg.showTunneling ? 'Included' : 'Hidden'} | SPS: {customHasPump ? 'Included' : 'Hidden'}
+                  </text>
+                </g>
+              ) : (
+                <g>
+                  <rect x={16} y={114} width={242} height={46} rx={3} fill="#fff7ed" stroke="#ea580c" strokeWidth={0.8} />
+                  <text x={24} y={129} fontSize={7} fontWeight="700" fill="#9a3412">
+                    {viewMode === 'weekly' ? 'WEEKLY CUSTOM DELTA:' : 'MONTHLY CUSTOM DELTA:'}
+                  </text>
+                  <text x={24} y={142} fontSize={7} fill="#c2410c">- Shaft Layers Added: +{customSummary.delta.addedLayers} layers</text>
+                  <text x={24} y={153} fontSize={7} fill="#c2410c">- Shafts Completed: +{customSummary.delta.addedShaftsCompleted} Nos</text>
+                </g>
+              )}
+
+              <text x={410} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                MANHOLE PROGRESS (CASTING & RING)
+              </text>
+              <text x={284} y={55} fontSize={7.5} fontWeight="700" fill="#1d4ed8">Lower Casting Complete (100%)</text>
+              <text x={536} y={55} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#1d4ed8">: {String(customSummary.castingCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={71} fontSize={7.5} fontWeight="600" fill="#b45309">Lower Casting On-going (&lt;100%)</text>
+              <text x={536} y={71} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#b45309">: {String(customSummary.castingOngoingCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={87} fontSize={7.5} fill="#dc2626">Lower Casting Remaining</text>
+              <text x={536} y={87} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#dc2626">: {String(customSummary.castingRemainingCount).padStart(2, '0')} Nos</text>
+
+              <line x1={284} y1={95} x2={536} y2={95} stroke="#cbd5e1" strokeWidth={0.6} />
+
+              <text x={284} y={109} fontSize={7.5} fontWeight="700" fill="#0284c7">Upper Ring Complete (100%)</text>
+              <text x={536} y={109} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#0284c7">: {String(customSummary.precastCompleteCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={125} fontSize={7.5} fontWeight="600" fill="#b45309">Upper Ring On-going (&lt;100%)</text>
+              <text x={536} y={125} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#b45309">: {String(customSummary.precastOngoingCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={141} fontSize={7.5} fill="#dc2626">Upper Ring Remaining</text>
+              <text x={536} y={141} textAnchor="end" fontSize={7.7} fontWeight="700" fill="#dc2626">: {String(customSummary.precastRemainingCount).padStart(2, '0')} Nos</text>
+              <text x={284} y={157} fontSize={7.1} fontWeight="600" fill="#475569">Total Manholes: {customSummary.totalManholes} Nos</text>
+
+              <text x={740} y={37} textAnchor="middle" fontSize={8.2} fontWeight="700" fill="#1e3a8a" textDecoration="underline">
+                MICRO-TUNNELLING (SELECTED SHAFTS)
+              </text>
+              <text x={564} y={55} fontSize={7.6} fontWeight="700" fill="#0f172a">SELECTED TUNNEL LENGTH</text>
+              <text x={914} y={55} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#0f172a">: {(customSummary.totalTunnelLengthM / 1000).toFixed(3)} km ({customSummary.totalTunnelLengthM.toFixed(0)} m)</text>
+              <text x={564} y={71} fontSize={7.6} fontWeight="700" fill="#a21caf">COMPLETED LENGTH</text>
+              <text x={914} y={71} textAnchor="end" fontSize={7.8} fontWeight="700" fill="#a21caf">: {(customSummary.completedTunnelLengthM / 1000).toFixed(3)} km ({customSummary.tunnelPctOverall.toFixed(1)}%)</text>
+              {diaKeys.map((dk, di) => {
+                const rowInfo = customSummary.byDia[dk] || { totalM: 0, completedM: 0 };
+                return (
+                  <g key={dk}>
+                    <text x={564} y={91 + di * 16} fontSize={7.2} fill="#334155">
+                      {di + 1}. {String(dk).replace('DN', 'DN ')} (Sel: {rowInfo.totalM.toFixed(0)} m)
+                    </text>
+                    <text x={914} y={91 + di * 16} textAnchor="end" fontSize={7.4} fontWeight="700" fill="#0f172a">
+                      Done: {rowInfo.completedM.toFixed(1)} m
+                    </text>
+                  </g>
+                );
+              })}
+
+              {viewMode !== 'overall' && (
+                <g>
+                  <rect x={562} y={133} width={354} height={24} rx={3} fill="#fff7ed" stroke="#ea580c" strokeWidth={0.8} />
+                  <text x={739} y={148} textAnchor="middle" fontSize={7.4} fontWeight="700" fill="#c2410c">
+                    {viewMode === 'weekly' ? 'WEEKLY CUSTOM TUNNEL ADDED: ' : 'MONTHLY CUSTOM TUNNEL ADDED: '}
+                    +{customSummary.delta.addedTunnelM.toFixed(1)} m ({(customSummary.delta.addedTunnelM / 1000).toFixed(3)} km)
                   </text>
                 </g>
               )}

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import {
   AppState,
+  CustomShaftViewConfig,
   PdfSheetKey,
   SavedProgressFile,
   SectionTab,
@@ -74,6 +75,7 @@ import {
 import { A1SheetDrawing } from './components/A1SheetDrawing';
 import { ShaftEditorPanel } from './components/ShaftEditorPanel';
 import { WbEditorPanel } from './components/WbWcEditors';
+import { CustomShaftPanel } from './components/CustomShaftPanel';
 
 const STORAGE_KEY = 'wa_progress_studio_v1';
 
@@ -95,6 +97,7 @@ export function App() {
   const [selectedWbNodeId, setSelectedWbNodeId] = useState<string>('WB1');
   const [selectedWcShaftId, setSelectedWcShaftId] = useState<string>('WC-1');
   const [combinedEditorTarget, setCombinedEditorTarget] = useState<'wa' | 'wb' | 'wc'>('wa');
+  const [customInspectorTab, setCustomInspectorTab] = useState<'custom' | 'edit'>('custom');
   const [focusSection, setFocusSection] = useState<'shaft' | 'manhole' | 'tunnel'>('shaft');
   const [zoom, setZoom] = useState<number>(1);
   const [showInspector, setShowInspector] = useState<boolean>(true);
@@ -240,6 +243,26 @@ export function App() {
     if (sec === 'wa' || sec === 'wa-map') setCombinedEditorTarget('wa');
     if (sec === 'wb' || sec === 'wb-map') setCombinedEditorTarget('wb');
     if (sec === 'wc' || sec === 'wc-map') setCombinedEditorTarget('wc');
+    if (sec === 'custom') {
+      setCustomInspectorTab('custom');
+      setShowInspector(true);
+    }
+  };
+
+  const handleUpdateCustomView = (patch: Partial<CustomShaftViewConfig>) => {
+    setState((prev) => ({
+      ...prev,
+      lastSavedAt: new Date().toISOString(),
+      customView: {
+        ...(prev.customView || {
+          section: 'wa',
+          selectedIds: ['WA-17', 'WA-18', 'WA-19', 'WA-20', 'WA-21', 'WA-22', 'WA-23', 'WA-24'],
+          showTunneling: true,
+          includePumpStation: false,
+        }),
+        ...patch,
+      },
+    }));
   };
 
   // Open Save Overall File modal
@@ -648,6 +671,9 @@ export function App() {
     : null;
 
   // Determine which right-side inspector to display
+  const customSectionTarget: 'wa' | 'wc' =
+    state.customView?.section === 'wc' ? 'wc' : 'wa';
+
   const activeInspectorMode: 'wa' | 'wb' | 'wc' =
     state.activeSection === 'wb' || state.activeSection === 'wb-map'
       ? 'wb'
@@ -655,6 +681,8 @@ export function App() {
       ? 'wc'
       : state.activeSection === 'combined'
       ? combinedEditorTarget
+      : state.activeSection === 'custom'
+      ? customSectionTarget
       : 'wa';
 
   // Active selection ring on drawing
@@ -697,7 +725,7 @@ export function App() {
           </span>
         </div>
 
-        {/* Section Tabs: WA | WB | WC | Combined + Portrait GIS Maps */}
+        {/* Section Tabs: WA | WB | WC | Combined | Custom + Portrait GIS Maps */}
         <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-800 p-1">
           {(
             [
@@ -705,6 +733,7 @@ export function App() {
               { id: 'wb', label: 'WB', sub: 'Open Cut' },
               { id: 'wc', label: 'WC', sub: '27 Shafts' },
               { id: 'combined', label: isBn ? 'Combined (একসাথে)' : 'Combined', sub: 'WA+WB+WC' },
+              { id: 'custom', label: 'Custom', sub: 'WA / WC' },
               { id: 'wa-map', label: 'WA Map', sub: 'GIS' },
               { id: 'wb-map', label: 'WB Map', sub: 'GIS' },
               { id: 'wc-map', label: 'WC Map', sub: 'GIS' },
@@ -712,6 +741,7 @@ export function App() {
           ).map((tab) => {
             const active = state.activeSection === tab.id;
             const isMapTab = tab.id.endsWith('-map');
+            const isCustomTab = tab.id === 'custom';
             return (
               <button
                 key={tab.id}
@@ -720,9 +750,13 @@ export function App() {
                   active
                     ? tab.id === 'combined'
                       ? 'bg-indigo-500 text-white shadow'
+                      : isCustomTab
+                      ? 'bg-orange-500 text-white shadow'
                       : isMapTab
                       ? 'bg-emerald-500 text-slate-950 shadow'
                       : 'bg-blue-500 text-white shadow'
+                    : isCustomTab
+                    ? 'text-orange-300 hover:bg-slate-700 hover:text-white'
                     : isMapTab
                     ? 'text-emerald-300 hover:bg-slate-700 hover:text-white'
                     : 'text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -739,7 +773,7 @@ export function App() {
           })}
         </div>
 
-        {/* View Mode Switcher (Overall / Weekly / Monthly) */}
+        {/* View Mode Switcher (Overall / Weekly / Monthly — Orange highlight on comparison modes) */}
         <div className="flex items-center gap-1 rounded-lg bg-slate-800 p-1">
           {(
             [
@@ -753,11 +787,9 @@ export function App() {
               onClick={() => setState((p) => ({ ...p, viewMode: m.id }))}
               className={`rounded-md px-2 py-1 text-xs font-semibold transition ${
                 state.viewMode === m.id
-                  ? m.id === 'weekly'
-                    ? 'bg-amber-500 text-slate-950 shadow'
-                    : m.id === 'monthly'
-                    ? 'bg-cyan-500 text-slate-950 shadow'
-                    : 'bg-emerald-500 text-slate-950 shadow'
+                  ? m.id === 'overall'
+                    ? 'bg-emerald-500 text-slate-950 shadow'
+                    : 'bg-orange-500 text-white shadow'
                   : 'text-slate-300 hover:bg-slate-700 hover:text-white'
               }`}
             >
@@ -982,11 +1014,7 @@ export function App() {
       {/* ==================== 2-FILE COMPARISON BAR (WEEKLY / MONTHLY) ==================== */}
       {state.viewMode !== 'overall' && (
         <div
-          className={`no-print flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-xs ${
-            state.viewMode === 'weekly'
-              ? 'border-amber-200 bg-amber-50/90 text-amber-950'
-              : 'border-cyan-200 bg-cyan-50/90 text-cyan-950'
-          }`}
+          className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-orange-200 bg-orange-50/95 px-3 py-2 text-xs text-orange-950"
         >
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-bold uppercase tracking-wide">
@@ -1188,8 +1216,49 @@ export function App() {
               </div>
             )}
 
+            {/* In Custom Mode show quick 2-pill switcher: Custom Selection vs Edit Shaft */}
+            {state.activeSection === 'custom' && (
+              <div className="grid grid-cols-2 gap-1 border-b border-slate-200 bg-orange-50 p-1.5 text-[11px] font-bold">
+                <button
+                  onClick={() => setCustomInspectorTab('custom')}
+                  className={`rounded py-1 transition ${
+                    customInspectorTab === 'custom'
+                      ? 'bg-orange-600 text-white shadow-xs'
+                      : 'bg-white text-orange-950 border border-orange-200 hover:bg-orange-100'
+                  }`}
+                >
+                  {isBn ? 'কাস্টম সিলেকশন' : 'Select Shafts / Range'}
+                </button>
+                <button
+                  onClick={() => setCustomInspectorTab('edit')}
+                  className={`rounded py-1 transition ${
+                    customInspectorTab === 'edit'
+                      ? 'bg-orange-600 text-white shadow-xs'
+                      : 'bg-white text-orange-950 border border-orange-200 hover:bg-orange-100'
+                  }`}
+                >
+                  {isBn
+                    ? `এডিট (${customSectionTarget === 'wc' ? selectedWcShaftId : selectedShaftId})`
+                    : `Edit (${customSectionTarget === 'wc' ? selectedWcShaftId : selectedShaftId})`}
+                </button>
+              </div>
+            )}
+
             <div className="flex-1 overflow-hidden">
-              {activeInspectorMode === 'wb' ? (
+              {state.activeSection === 'custom' && customInspectorTab === 'custom' ? (
+                <CustomShaftPanel
+                  state={state}
+                  selectedShaftId={
+                    customSectionTarget === 'wc' ? selectedWcShaftId : selectedShaftId
+                  }
+                  onUpdateCustomView={handleUpdateCustomView}
+                  onOpenShaftEditor={(shaftId, sec) => {
+                    if (sec === 'wc') setSelectedWcShaftId(shaftId);
+                    else setSelectedShaftId(shaftId);
+                    setCustomInspectorTab('edit');
+                  }}
+                />
+              ) : activeInspectorMode === 'wb' ? (
                 <WbEditorPanel
                   state={state}
                   selectedNodeId={selectedWbNodeId}

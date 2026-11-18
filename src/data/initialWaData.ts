@@ -24,12 +24,12 @@ export const DEFAULT_COLORS: ColorPalette = {
   prevWeekShaft: '#16a34a',
   prevWeekManhole: '#1d4ed8',
   prevWeekTunnel: '#a21caf',
-  thisWeekHighlight: '#f59e0b',
+  thisWeekHighlight: '#f97316',
 
   prevMonthShaft: '#15803d',
   prevMonthManhole: '#1e40af',
   prevMonthTunnel: '#86198f',
-  thisMonthHighlight: '#06b6d4',
+  thisMonthHighlight: '#f97316',
 };
 
 export const DEFAULT_SETTINGS: SheetSettings = {
@@ -1395,6 +1395,12 @@ export function createInitialAppState(): AppState {
     waGeoNodes: INITIAL_WA_GEO_NODES.map((n) => ({ ...n })),
     spsCoord: { ...GOLAPBAG_SPS_COORD },
     waCustomPoints: [],
+    customView: {
+      section: 'wa',
+      selectedIds: ['WA-17', 'WA-18', 'WA-19', 'WA-20', 'WA-21', 'WA-22', 'WA-23', 'WA-24'],
+      showTunneling: true,
+      includePumpStation: false,
+    },
     savedFiles: [initialSavedFile],
     activeLoadedFileId: null,
     weeklyCompare: {
